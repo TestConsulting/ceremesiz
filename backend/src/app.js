@@ -61,6 +61,7 @@ function createApp(options = {}) {
   // Öffentliche Website
   const indexFile = path.join(PUBLIC_DIR, 'index.html');
   app.get(['/', '/index.html'], (req, res) => res.sendFile(indexFile));
+  app.get('/favicon.png', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'favicon.png')));
 
   // Interner Bereich – wird nur an angemeldete Benutzer ausgeliefert.
   const internFile = path.join(PRIVATE_DIR, 'intern.html');

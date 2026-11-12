@@ -40,6 +40,13 @@ test('öffentliche Startseite ist erreichbar', async () => {
   assert.match(await res.text(), /data-open-login/);
 });
 
+test('Favicon ist öffentlich als PNG erreichbar', async () => {
+  const res = await fetch(`${base}/favicon.png`);
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^image\/png/);
+  assert.deepStrictEqual(Buffer.from(await res.arrayBuffer()).subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+});
+
 test('interner Bereich leitet ohne Login zur Anmeldung um', async () => {
   const res = await fetch(`${base}/intern`, { redirect: 'manual' });
   assert.strictEqual(res.status, 302);
@@ -79,6 +86,7 @@ test('Login, interner Bereich und Logout', async () => {
   assert.strictEqual(page.headers.get('cache-control'), 'no-store');
   const html = await page.text();
   assert.match(html, /window\.__BOOT__=\{"user":\{[^}]*"firstName":"Demo"/);
+  assert.match(html, /<link rel="icon" type="image\/png" sizes="32x32" href="\/favicon\.png">/);
   assert.ok(!html.includes('<!--__BOOT__-->'));
 
   const noCsrf = await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { Cookie: cookie } });

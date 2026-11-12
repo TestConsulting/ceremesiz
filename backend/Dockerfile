@@ -20,6 +20,7 @@ COPY backend/package.json ./
 COPY backend/src ./src
 COPY backend/private ./private
 COPY index.html /app/public/index.html
+COPY favicon.png /app/public/favicon.png
 
 RUN mkdir -p /app/backend/data && chown -R node:node /app/backend/data
 USER node
