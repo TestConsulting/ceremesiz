@@ -16,6 +16,7 @@ let base;
 
 test.before(async () => {
   await upsertUser({ email: 'Demo.User@example.invalid', firstName: 'Demo', lastName: 'User', password: 'richtig-123!' });
+  await upsertUser({ email: 'second@example.invalid', firstName: 'Second', lastName: 'User', password: 'richtig-123!' });
   server = createApp({ sessionSecret: 'test-secret', loginLimit: 5 }).listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -97,6 +98,34 @@ test('Login, interner Bereich und Logout', async () => {
 
   const after = await fetch(`${base}/intern`, { headers: { Cookie: cookie }, redirect: 'manual' });
   assert.strictEqual(after.status, 302);
+});
+
+test('Seitenleisten-Einstellungen sind geschützt, gemeinsam und gegen veraltete Änderungen gesichert', async () => {
+  const url = `${base}/api/sidebar-settings`;
+  assert.strictEqual((await fetch(url)).status, 401);
+  const firstLogin = await login('demo.user@example.invalid', 'richtig-123!');
+  const firstCookie = cookieOf(firstLogin);
+  const firstBody = await firstLogin.json();
+  const secondLogin = await login('second@example.invalid', 'richtig-123!');
+  const secondCookie = cookieOf(secondLogin);
+  const initial = await (await fetch(url, { headers: { Cookie: firstCookie } })).json();
+  assert.strictEqual(initial.revision, 0);
+  const settings = { ...initial, color: '#123456', items: { konto: { name: 'Konten', beta: true } }, groups: { holding: { name: 'Gruppe', beta: true } } };
+  const request = (body, csrf = firstBody.csrfToken) => fetch(url, {
+    method: 'PUT', headers: { Cookie: firstCookie, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(body),
+  });
+  assert.strictEqual((await request(settings, 'invalid')).status, 403);
+  assert.strictEqual((await request({ ...settings, color: 'red' })).status, 400);
+  assert.strictEqual((await request({ ...settings, items: { unknown: { name: 'X', beta: true } } })).status, 400);
+  const saved = await request(settings);
+  assert.strictEqual(saved.status, 200);
+  const savedSettings = await saved.json();
+  assert.strictEqual(savedSettings.revision, 1);
+  assert.deepStrictEqual(await (await fetch(url, { headers: { Cookie: secondCookie } })).json(), savedSettings);
+  assert.strictEqual((await request(settings)).status, 409);
+  const page = await (await fetch(`${base}/intern`, { headers: { Cookie: secondCookie } })).text();
+  assert.match(page, /"sidebarSettings":\{"revision":1/);
 });
 
 test('Passwortänderung beendet bestehende Sitzungen', async () => {

@@ -7,6 +7,8 @@
 
 Passwörter werden mit bcrypt gehasht in SQLite (`backend/data/`) gespeichert, die Session liegt in einem HttpOnly-Cookie.
 
+Im internen Bereich lassen sich unter **Einstellungen** die Namen und der Beta-Status der Seitenleisten-Einträge und Gruppen sowie eine gemeinsame Beta-Farbe ändern. Die Einstellungen werden für alle Benutzer in SQLite gespeichert; bereits geöffnete Sitzungen zeigen Änderungen nach dem Neuladen. Andere Moduldaten bleiben im jeweiligen Browser gespeichert.
+
 ## Lokal starten
 
 ```powershell

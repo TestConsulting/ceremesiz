@@ -109,6 +109,15 @@ textarea{resize:vertical}
 .nav a.top{padding-left:10px}
 .nav a:hover{background:var(--field);opacity:1}
 .nav a.on{background:var(--brass-soft);opacity:1;box-shadow:inset 3px 0 0 var(--brass);color:var(--brass-ink);font-weight:700}
+.nav a.beta,.nav-grp-h.beta{border-left:3px solid var(--beta-color)}
+.nav .beta-badge{margin-left:auto;font-size:10px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--ink);border:1px solid var(--beta-color);border-radius:4px;padding:1px 5px}
+.settings-list{display:grid;gap:12px}
+.settings-row{display:grid;grid-template-columns:minmax(150px,1fr) minmax(160px,2fr) auto;gap:12px;align-items:center}
+.settings-row input[type=text]{width:100%}
+.settings-beta{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.settings-color{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.settings-color input{width:48px;height:36px;padding:2px;cursor:pointer}
+@media(max-width:600px){.settings-row{grid-template-columns:1fr auto}.settings-row>label:first-child{grid-column:1/-1}}
 .side-foot{margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 8px 0;border-top:1px solid var(--line)}
 .avatar{width:34px;height:34px;border-radius:50%;background:var(--brass);color:var(--on-brass);display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
 .side-foot .who{flex:1;min-width:0;font-size:12.5px}
@@ -705,10 +714,21 @@ const NAV=[
   {co:'tc',items:[['vertrieb','Vertrieb'],['marketing','Marketing']]},
   {co:'ppt',items:[['ppt','Übersicht']]}
 ];
+const TOP_NAV=[['dashboard','Übersicht'],['board','Aufgaben']];
+let sidebarSettings=BOOT.sidebarSettings;
+const sidebarEntry=(kind,id,name)=>sidebarSettings[kind][id]||{name,beta:false};
+const sidebarBadge=entry=>entry.beta?'<span class="beta-badge">Beta</span>':'';
+function sidebarLink(id,name,r,top=false){
+  const entry=sidebarEntry('items',id,name);
+  return `<a href="#${id}" class="${top?'top ':''}${r===id?'on ':''}${entry.beta?'beta':''}">${esc(entry.name)}${sidebarBadge(entry)}</a>`;
+}
 function renderNav(r){
-  $('#nav').innerHTML=`<a class="top ${r==='dashboard'?'on':''}" href="#dashboard">Übersicht</a><a class="top ${r==='board'?'on':''}" href="#board">Aufgaben</a>`+NAV.map(g=>`
-   <div class="nav-grp"><div class="nav-grp-h"><span class="dot" style="background:${CO[g.co].c}"></span>${CO[g.co].n}</div>
-   ${g.items.map(([id,l])=>`<a href="#${id}" class="${r===id?'on':''}">${l}</a>`).join('')}</div>`).join('');
+  const nav=$('#nav');nav.style.setProperty('--beta-color',sidebarSettings.color);
+  nav.innerHTML=TOP_NAV.map(([id,name])=>sidebarLink(id,name,r,true)).join('')+NAV.map(g=>{
+    const entry=sidebarEntry('groups',g.co,CO[g.co].n);
+    return `<div class="nav-grp"><div class="nav-grp-h ${entry.beta?'beta':''}"><span class="dot" style="background:${CO[g.co].c}"></span>${esc(entry.name)}${sidebarBadge(entry)}</div>
+    ${g.items.map(([id,name])=>sidebarLink(id,name,r)).join('')}</div>`;
+  }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a>`;
 }
 
 /* ---------------- Daten: Renditekalkulation ---------------- */
@@ -841,7 +861,7 @@ if(!emps){
 }
 
 /* ---------------- Routing ---------------- */
-const ROUTES={board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT};
+const ROUTES={board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT,settings:viewSettings};
 function route(){
   const h=curRoute||'dashboard';
   if(!auth.get()){location.replace('/#login');return}
@@ -858,6 +878,43 @@ $('#meName').textContent=ME.name;$('#meIni').textContent=ME.initials;
 $('#menuBtn').onclick=()=>$('#app').classList.toggle('open');
 
 const head=(co,crumb,title,actions='')=>`<div class="page-head"><div><div class="eyebrow">${co?`<span class="dot" style="background:${CO[co].c}"></span>${CO[co].n} · `:''}${crumb}</div><h1>${title}</h1></div><div class="actions">${actions}</div></div>`;
+
+function viewSettings(){
+  const row=(kind,id,defaultName)=>{
+    const entry=sidebarEntry(kind,id,defaultName),field=`setting-${kind}-${id}`;
+    return `<div class="settings-row"><label for="${field}">${esc(defaultName)}</label><input id="${field}" type="text" data-kind="${kind}" data-id="${id}" value="${esc(entry.name)}" maxlength="60" required><label class="settings-beta"><input type="checkbox" data-beta="${kind}-${id}" ${entry.beta?'checked':''}> Beta</label></div>`;
+  };
+  $('#main').innerHTML=head(null,'Einstellungen','Seitenleiste verwalten')+`
+    <form id="sidebarSettingsForm" class="panel">
+      <div class="panel-h"><h2>Namen und Beta-Status</h2></div>
+      <p class="muted">Diese Einstellungen gelten für alle Benutzer. Andere offene Sitzungen sehen Änderungen nach dem Neuladen.</p>
+      <div class="settings-list">
+        <h3>Allgemein</h3>${TOP_NAV.map(([id,name])=>row('items',id,name)).join('')}
+        ${NAV.map(g=>`<h3>${esc(CO[g.co].n)}</h3>${row('groups',g.co,CO[g.co].n)}${g.items.map(([id,name])=>row('items',id,name)).join('')}`).join('')}
+        <label class="settings-color">Beta-Farbe <input type="color" id="sidebarColor" value="${esc(sidebarSettings.color)}"></label>
+        <p id="sidebarSettingsError" role="alert" hidden></p>
+        <div class="actions"><button type="submit" class="btn primary">Einstellungen speichern</button></div>
+      </div>
+    </form>`;
+  $('#sidebarSettingsForm').onsubmit=async e=>{
+    e.preventDefault();
+    const form=e.currentTarget,error=$('#sidebarSettingsError'),button=form.querySelector('button[type=submit]');
+    const payload={revision:sidebarSettings.revision,color:$('#sidebarColor').value,groups:{},items:{}};
+    for(const input of form.querySelectorAll('input[data-kind]')){
+      const name=input.value.trim();
+      if(!name){error.textContent='Bitte für jeden Eintrag einen Namen eingeben.';error.hidden=false;input.focus();return}
+      payload[input.dataset.kind][input.dataset.id]={name,beta:form.querySelector(`[data-beta="${input.dataset.kind}-${input.dataset.id}"]`).checked};
+    }
+    error.hidden=true;button.disabled=true;
+    try{
+      const response=await fetch('/api/sidebar-settings',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':BOOT.csrfToken},body:JSON.stringify(payload)});
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||'Einstellungen konnten nicht gespeichert werden.');
+      sidebarSettings=result;renderNav('settings');toast('Einstellungen gespeichert');
+    }catch(err){console.error('Seitenleisten-Einstellungen:',err);error.textContent=err.message||'Einstellungen konnten nicht gespeichert werden.';error.hidden=false}
+    finally{button.disabled=false}
+  };
+}
 
 /* ---------------- Übersicht ---------------- */
 const CO_KEY={holding:'ho',tc:'tc',immo:'ac',ppt:'ppt'};

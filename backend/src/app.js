@@ -6,6 +6,8 @@ const session = require('express-session');
 const db = require('./db');
 const SqliteSessionStore = require('./session-store');
 const authRoutes = require('./routes/auth');
+const sidebarSettingsRoutes = require('./routes/sidebar-settings');
+const { getSettings } = require('./sidebar-settings');
 const { requireAuthPage } = require('./middleware/auth');
 const { publicUser } = require('./users');
 
@@ -56,6 +58,7 @@ function createApp(options = {}) {
 
   app.get('/health', (req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRoutes({ allowedOrigins, loginLimit }));
+  app.use('/api/sidebar-settings', sidebarSettingsRoutes({ allowedOrigins }));
   app.use('/api', (req, res) => res.status(404).json({ error: 'Nicht gefunden' }));
 
   // Öffentliche Website
@@ -68,7 +71,7 @@ function createApp(options = {}) {
   let internCache = null;
   const internHtml = () => (isProd && internCache) || (internCache = fs.readFileSync(internFile, 'utf8'));
   app.get(['/intern', '/intern/'], requireAuthPage, (req, res) => {
-    const boot = { user: publicUser(req.user), csrfToken: req.session.csrfToken };
+    const boot = { user: publicUser(req.user), csrfToken: req.session.csrfToken, sidebarSettings: getSettings() };
     const html = internHtml().replace('<!--__BOOT__-->', `<script>window.__BOOT__=${inlineJson(boot)}</script>`);
     res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
     res.type('html').send(html);

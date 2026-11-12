@@ -28,6 +28,12 @@ db.exec(`
     expires INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS sessions_expires ON sessions (expires);
+
+  CREATE TABLE IF NOT EXISTS sidebar_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    revision INTEGER NOT NULL,
+    settings TEXT NOT NULL
+  );
 `);
 
 module.exports = db;
