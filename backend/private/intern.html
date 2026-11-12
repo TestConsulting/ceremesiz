@@ -723,7 +723,7 @@ const BLANK={name:'',adresse:'',baujahr:'',flaeche:'',kaufpreis:'',grest:6.5,not
 const SAMPLE={name:'Eschweiler – Grünes Gebäude, Indestraße',adresse:'Indestraße, 52249 Eschweiler',baujahr:1930,flaeche:279,kaufpreis:299500,grest:6.5,notar:2,makler:3.57,grund:0,darlehen:299500,zins:4,tilgung:1.5,bindung:10,start:'2025-10-01',mieteIst:1580,mspSoll:7,nk:480,afa:2,kst:15,status:'offen'};
 let calcs=store.get('ch_calcs_v1',null);
 if(!calcs){calcs=[{id:'c1',savedAt:'2026-10-08T18:20:00',data:{...SAMPLE}}];store.set('ch_calcs_v1',calcs)}
-let cur={id:'c1',data:{...calcs[0].data}};
+let cur=calcs.length?{id:calcs[0].id,data:{...calcs[0].data}}:{id:null,data:{...BLANK}};
 
 function compute(c){
   const v=k=>{const x=parseFloat(c[k]);return Number.isFinite(x)?x:0};
