@@ -56,6 +56,87 @@
 
     nav a:hover { color: var(--green); }
 
+    nav { display: flex; align-items: center; flex-wrap: wrap; }
+
+    .nav-login {
+      margin-left: 28px;
+      padding: 10px 20px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--green);
+      color: var(--white);
+      font: inherit;
+      font-weight: 800;
+      font-size: 15px;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .nav-login:hover { transform: translateY(-2px); filter: brightness(1.06); }
+
+    button.btn { border: 0; font: inherit; font-weight: 800; cursor: pointer; }
+    button.btn-secondary { background: transparent; border: 2px solid var(--black); }
+
+    /* Login-Dialog */
+    .login-overlay[hidden] { display: none; }
+
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgba(5, 5, 5, 0.62);
+    }
+
+    .login-box {
+      width: min(420px, 100%);
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+      overflow: hidden;
+    }
+
+    .login-head {
+      padding: 26px 30px;
+      border-bottom: 1px solid #e5e7eb;
+      display: grid;
+      gap: 14px;
+    }
+
+    .login-head img { height: 44px; width: auto; }
+    .login-head h2 { font-size: 26px; letter-spacing: -0.03em; }
+
+    .login-form { padding: 24px 30px 30px; display: grid; gap: 16px; }
+    .login-field { display: grid; gap: 6px; }
+    .login-field label { font-size: 13px; font-weight: 700; color: var(--gray); }
+
+    .login-field input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: var(--light);
+      font: inherit;
+      font-size: 15px;
+    }
+
+    .login-field input:focus { outline: none; border-color: var(--green); background: var(--white); }
+
+    .login-error {
+      font-size: 14px;
+      color: #b23838;
+      background: #f8e4e4;
+      padding: 10px 12px;
+      border-radius: 10px;
+    }
+
+    .login-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+    .login-actions .btn { padding: 12px 22px; }
+    .btn-ghost { background: transparent; color: var(--black); }
+    .btn-ghost:hover { background: var(--light); }
+
     .hero {
       min-height: 78vh;
       display: grid;
@@ -375,6 +456,7 @@
     @media (max-width: 900px) {
       header { flex-direction: column; align-items: flex-start; gap: 20px; }
       nav a { margin-left: 0; margin-right: 18px; }
+      .nav-login { margin-left: 0; }
       .hero, .leadership-box { grid-template-columns: 1fr; }
       .companies, .features { grid-template-columns: 1fr; }
       .symbol { width: 150px; height: 150px; }
@@ -391,6 +473,7 @@
       <a href="#gesellschaften">Tochtergesellschaften</a>
       <a href="#fuehrung">Führung</a>
       <a href="#kontakt">Kontakt</a>
+      <button type="button" class="nav-login" data-open-login>Login</button>
     </nav>
   </header>
 
@@ -406,6 +489,7 @@
         <div class="buttons">
           <a href="#gesellschaften" class="btn btn-primary">Gesellschaften ansehen</a>
           <a href="#kontakt" class="btn btn-secondary">Kontakt aufnehmen</a>
+          <button type="button" class="btn btn-secondary" data-open-login>Interner Bereich</button>
         </div>
       </div>
 
@@ -523,5 +607,98 @@
     <div>© 2025 Ceremesiz Holding. Alle Rechte vorbehalten.</div>
     <div>TestConsulting CC GmbH · AC Immo Invest GmbH</div>
   </footer>
+
+  <div class="login-overlay" id="loginModal" hidden>
+    <div class="login-box" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <div class="login-head">
+        <img id="loginLogo" alt="Ceremesiz Holding" />
+        <h2 id="loginTitle">Interner Bereich</h2>
+      </div>
+      <form class="login-form" id="loginForm" novalidate>
+        <div class="login-field">
+          <label for="lgUser">E-Mail</label>
+          <input id="lgUser" type="email" autocomplete="username" required />
+        </div>
+        <div class="login-field">
+          <label for="lgPw">Passwort</label>
+          <input id="lgPw" type="password" autocomplete="current-password" required />
+        </div>
+        <div class="login-error" id="lgError" role="alert" hidden></div>
+        <div class="login-actions">
+          <button type="button" class="btn btn-ghost" id="lgCancel">Abbrechen</button>
+          <button type="submit" class="btn btn-primary">Anmelden</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const INTERN = '/intern#dashboard';
+      const modal = document.getElementById('loginModal');
+      const form = document.getElementById('loginForm');
+      const userInp = document.getElementById('lgUser');
+      const pwInp = document.getElementById('lgPw');
+      const errBox = document.getElementById('lgError');
+      const submitBtn = form.querySelector('button[type="submit"]');
+
+      document.getElementById('loginLogo').src = document.querySelector('.logo img').src;
+
+      const showError = msg => { errBox.textContent = msg; errBox.hidden = false; };
+
+      async function isLoggedIn() {
+        try {
+          const res = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
+          return res.ok;
+        } catch (e) { return false; }
+      }
+
+      async function openLogin() {
+        if (await isLoggedIn()) { location.href = INTERN; return; }
+        errBox.hidden = true;
+        pwInp.value = '';
+        modal.hidden = false;
+        userInp.focus();
+      }
+
+      function closeLogin() {
+        modal.hidden = true;
+        if (location.hash === '#login') history.replaceState(null, '', location.pathname + location.search);
+      }
+
+      document.querySelectorAll('[data-open-login]').forEach(b => b.addEventListener('click', openLogin));
+      document.getElementById('lgCancel').addEventListener('click', closeLogin);
+      modal.addEventListener('click', e => { if (e.target === modal) closeLogin(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeLogin(); });
+
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const email = userInp.value.trim();
+        const password = pwInp.value;
+        if (!email || !password) { showError('Bitte E-Mail und Passwort eingeben.'); return; }
+        errBox.hidden = true;
+        submitBtn.disabled = true;
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          if (res.ok) { location.href = INTERN; return; }
+          const data = await res.json().catch(() => ({}));
+          showError(data.error || 'Anmeldung fehlgeschlagen.');
+          pwInp.value = '';
+          pwInp.focus();
+        } catch (err) {
+          showError('Server nicht erreichbar. Bitte später erneut versuchen.');
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      if (location.hash === '#login') openLogin();
+    })();
+  </script>
 </body>
 </html>

@@ -1,0 +1,23 @@
+{
+  "name": "ceremesiz-backend",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "user:set": "node src/set-user.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.2",
+    "express-session": "^1.19.0"
+  }
+}
