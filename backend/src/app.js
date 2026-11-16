@@ -45,7 +45,8 @@ function createApp(options = {}) {
     next();
   });
 
-  app.use(express.json({ limit: '10kb' }));
+  const normalJson=express.json({ limit: '10kb' });
+  app.use((req,res,next)=>req.path.startsWith('/api/fibu-runner/')||/^\/api\/fibu\/imports\/[^/]+$/.test(req.path)?next():normalJson(req,res,next));
   app.use(session({
     name: SESSION_COOKIE,
     secret,
@@ -59,6 +60,9 @@ function createApp(options = {}) {
   app.get('/health', (req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRoutes({ allowedOrigins, loginLimit }));
   app.use('/api/sidebar-settings', sidebarSettingsRoutes({ allowedOrigins }));
+  const fibu=require('./routes/fibu')({ db, allowedOrigins, ...options.fibu });
+  app.use('/api/fibu', fibu);
+  app.use('/api/fibu-runner', fibu.runnerRouter);
   app.use('/api', (req, res) => res.status(404).json({ error: 'Nicht gefunden' }));
 
   // Öffentliche Website
@@ -75,6 +79,12 @@ function createApp(options = {}) {
     const html = internHtml().replace('<!--__BOOT__-->', `<script>window.__BOOT__=${inlineJson(boot)}</script>`);
     res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
     res.type('html').send(html);
+  });
+  app.get('/intern/fibu.js', requireAuthPage, (req, res) => {
+    res.set('Cache-Control', 'no-store').sendFile(path.join(PRIVATE_DIR, 'fibu.js'));
+  });
+  app.get(['/intern/fibu-cockpit.js','/intern/fibu-cockpit.css'], requireAuthPage, (req,res)=>{
+    res.set('Cache-Control','no-store').sendFile(path.join(PRIVATE_DIR,path.basename(req.path)));
   });
 
   app.use((req, res) => res.status(404).type('text').send('Nicht gefunden'));

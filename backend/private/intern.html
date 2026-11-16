@@ -692,6 +692,8 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="/intern/fibu.js"></script>
+<script src="/intern/fibu-cockpit.js"></script>
 <script>
 /* ---------------- Helfer ---------------- */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -709,9 +711,9 @@ let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;
 /* ---------------- Navigation ---------------- */
 const CO={holding:{n:'Ceremesiz Holding',c:'var(--c-holding)'},immo:{n:'AC Immo Invest',c:'var(--c-immo)'},tc:{n:'TestConsulting',c:'var(--c-tc)'},ppt:{n:'ProPersonalTeam',c:'var(--c-ppt)'}};
 const NAV=[
-  {co:'holding',items:[['holding','Beteiligungen & Historie'],['konto','Kontoentwicklung'],['rente','Rentenstatus']]},
-  {co:'immo',items:[['portfolio','Immobilienportfolio'],['rendite','Renditekalkulation']]},
-  {co:'tc',items:[['vertrieb','Vertrieb'],['marketing','Marketing']]},
+  {co:'holding',items:[['fibu-holding','Finanzbuchhaltung'],['holding','Beteiligungen & Historie'],['konto','Kontoentwicklung'],['rente','Rentenstatus']]},
+  {co:'immo',items:[['fibu-immo','Finanzbuchhaltung'],['portfolio','Immobilienportfolio'],['rendite','Renditekalkulation']]},
+  {co:'tc',items:[['fibu-tc','Finanzbuchhaltung'],['vertrieb','Vertrieb'],['marketing','Marketing']]},
   {co:'ppt',items:[['ppt','Übersicht']]}
 ];
 const TOP_NAV=[['dashboard','Übersicht'],['board','Aufgaben']];
@@ -861,7 +863,7 @@ if(!emps){
 }
 
 /* ---------------- Routing ---------------- */
-const ROUTES={board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT,settings:viewSettings};
+const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT,settings:viewSettings};
 function route(){
   const h=curRoute||'dashboard';
   if(!auth.get()){location.replace('/#login');return}

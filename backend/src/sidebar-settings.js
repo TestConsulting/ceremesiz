@@ -1,7 +1,7 @@
 const db = require('./db');
 
 const groupIds = ['holding', 'immo', 'tc', 'ppt'];
-const itemIds = ['dashboard', 'board', 'holding', 'konto', 'rente', 'portfolio', 'rendite', 'vertrieb', 'marketing', 'ppt'];
+const itemIds = ['dashboard', 'board', 'holding', 'konto', 'rente', 'portfolio', 'rendite', 'vertrieb', 'marketing', 'ppt', 'fibu-tc', 'fibu-immo', 'fibu-holding'];
 const defaultSettings = { color: '#b36b10', groups: {}, items: {} };
 
 function getSettings() {

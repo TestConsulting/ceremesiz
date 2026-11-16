@@ -1,5 +1,7 @@
 # Ceremesiz Holding – Website mit internem Bereich
 
+Astra FIBU: Einrichtung, lokale Demo, Windows-Kopplung und bekannte Grenzen stehen in [FIBU-ENTWICKLUNG.md](FIBU-ENTWICKLUNG.md). Ohne explizite Konfiguration ist die Verarbeitung deaktiviert.
+
 - `index.html` – öffentliche Website inkl. Login-Dialog
 - `backend/` – Node.js/Express-Backend (Login, Sessions, geschützter Bereich `/intern`)
 - `backend/private/intern.html` – interner Bereich, wird **nur** nach Login vom Backend ausgeliefert

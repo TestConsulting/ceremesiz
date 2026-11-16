@@ -1,0 +1,48 @@
+{
+  "mode": "local",
+  "microsoft": {
+    "tenantId": "TENANT-ID-EINTRAGEN",
+    "clientId": "APP-CLIENT-ID-EINTRAGEN"
+  },
+  "companies": {
+    "tc": {
+      "enabled": false,
+      "pilotMode": true,
+      "ocrEnabled": true,
+      "portalUrls": {},
+      "root": "C:/PFAD/ZUR/SYNCHRONISIERTEN/FIRMENWURZEL",
+      "collectionFolder": "01. Buchhaltung/00. FiBu [TestConsulting CC GmbH]/01.Automatisierte Buchhaltung_ASTRA",
+      "accountHolder": "TestConsulting CC GmbH",
+      "documentCompanyName": "TestConsulting CC GmbH",
+      "iban": "VERIFIZIERTE-IBAN-EINTRAGEN",
+      "mailbox": "epost@testconsulting.de",
+      "allowedUsers": [],
+      "payrollExceptions": true,
+      "greenCounterparties": ["RCI Allemagne", "Hays", "C. Brettschneider GmbH Kartonagenfabrik", "FC Moto"]
+    },
+    "immo": {
+      "enabled": false,
+      "pilotAccepted": false,
+      "root": "FIRMENWURZEL-AC-IMMO",
+      "collectionFolder": "SAMMELORDNER-EINTRAGEN",
+      "accountHolder": "AC Immo Invest GmbH",
+      "documentCompanyName": "AC Immo Invest GmbH",
+      "iban": "VERIFIZIERTE-IBAN-EINTRAGEN",
+      "allowedUsers": [],
+      "payrollExceptions": false,
+      "greenCounterparties": []
+    },
+    "holding": {
+      "enabled": false,
+      "pilotAccepted": false,
+      "root": "FIRMENWURZEL-HOLDING",
+      "collectionFolder": "SAMMELORDNER-EINTRAGEN",
+      "accountHolder": "KONTOINHABER-EINTRAGEN",
+      "documentCompanyName": "Ceremesiz Holding",
+      "iban": "VERIFIZIERTE-IBAN-EINTRAGEN",
+      "allowedUsers": [],
+      "payrollExceptions": false,
+      "greenCounterparties": []
+    }
+  }
+}

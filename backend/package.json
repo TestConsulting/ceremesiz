@@ -4,20 +4,26 @@
   "private": true,
   "main": "src/server.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "user:set": "node src/set-user.js",
-    "test": "node --test"
+    "test": "node --test",
+    "fibu:runner": "node src/fibu/runner.js",
+    "fibu:demo": "node scripts/fibu-demo.cjs"
   },
   "dependencies": {
+    "@tesseract.js-data/deu": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.2",
-    "express-session": "^1.19.0"
+    "express-session": "^1.19.0",
+    "pdfjs-dist": "^6.5.438",
+    "tesseract.js": "^7.0.0"
   }
 }

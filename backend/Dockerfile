@@ -19,6 +19,9 @@ COPY --from=deps /app/backend/node_modules ./node_modules
 COPY backend/package.json ./
 COPY backend/src ./src
 COPY backend/private ./private
+COPY backend/vendor ./vendor
+COPY backend/scripts ./scripts
+COPY backend/test ./test
 COPY index.html /app/public/index.html
 COPY favicon.png /app/public/favicon.png
 
