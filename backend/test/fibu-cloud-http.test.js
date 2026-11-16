@@ -46,4 +46,12 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  for(let n=0;n<100;n++){profiledResult=await(await api('/jobs/'+profiledJob.id)).json();if(!['queued','running'].includes(profiledResult.state))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(profiledResult.state,'completed');assert.equal(profiledResult.folderId,first.id);
  const store=require('../src/fibu/store').createStore(db);assert.equal(store.month(profiledResult.owner,'tc','2026-10',first.id).jobId,profiledJob.id);assert.equal(store.month(profiledResult.owner,'tc','2026-10').jobId,rootJob.id);assert.equal(store.month(profiledResult.owner,'tc','2026-10',second.id),null);
+ const settings=await(await api('/settings/tc')).json();assert.equal(settings.pilotMode,true);assert.equal(settings.mailStorage,'privateServer');assert.equal(settings.mailbox,'epost@testconsulting.de');assert.equal(settings.iban,undefined);assert.equal((await api('/settings/immo')).status,403);
+ assert.equal((await api('/months/unknown/remove',{companyId:'tc'})).status,404);assert.equal((await api('/months/'+first.id+'/remove',{companyId:'immo'})).status,403);
+ assert.equal((await api('/months/'+first.id+'/remove',{companyId:'tc'})).status,200);
+ const hidden=await(await api('/months?companyId=tc')).json();assert.equal(hidden.months.some(m=>m.id===first.id),false);assert.equal(hidden.removed.some(m=>m.id===first.id),true);
+ assert.equal((await api('/jobs',{...params,folderId:first.id})).status,404);
+ assert.deepEqual(Buffer.from(await(await api('/jobs/'+profiledJob.id+'/files/original')).arrayBuffer()),bank);assert.ok(await fsp.stat(profiledResult.markedPdfPath));
+ assert.equal((await api('/months/'+first.id+'/restore',{companyId:'tc'})).status,200);const restored=(await(await api('/months?companyId=tc')).json()).months.find(m=>m.id===first.id);assert.equal(restored.bankPdfPath,first.bankPdfPath);assert.equal(restored.name,first.name);
+ const active=store.enqueue(profiledResult.owner,{companyId:'tc',month:'2026-10',folderId:first.id});assert.equal((await api('/months/'+first.id+'/remove',{companyId:'tc'})).status,409);store.save(active,'cancelled');
 });

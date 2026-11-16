@@ -34,7 +34,22 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     const seen=canConnect?db.prepare('SELECT seen FROM fibu_runner_state WHERE company=?').get(id)?.seen:null;
     return {id,name,enabled,canConnect,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,canWrite:canConnect&&!!ms.canWrite?.(req.user.id,id),connected:canConnect&&ms.connected(req.user.id,id)};
   })}));
-  router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);res.json({months:store.folders(req.user.id,req.query.companyId).filter(m=>config.mode!=='cloud'||m.storageMode==='cloud')});});
+  router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);const all=store.folders(req.user.id,req.query.companyId,{includeHidden:true}).filter(m=>config.mode!=='cloud'||m.storageMode==='cloud');res.json({months:all.filter(m=>!m.removedAt),removed:all.filter(m=>m.removedAt).map(({id,name,label,month,removedAt})=>({id,name,label,month,removedAt}))});});
+  router.get('/settings/:companyId',(req,res)=>{
+    const c=companyFor(config,req.user,req.params.companyId);
+    res.json({mailbox:c.mailbox||'epost@testconsulting.de',mode:config.mode,pilotMode:c.pilotMode===true,ocrEnabled:c.ocrEnabled===true,greenCounterparties:c.greenCounterparties||[],payrollExceptions:c.payrollExceptions===true,mailStorage:config.mode==='cloud'?'privateServer':'configuredCollection',collectionSource:config.mode==='cloud'?(c.cloud.collectionPath?[c.cloud.rootPath,c.cloud.collectionPath].filter(Boolean).join('/'):null):c.collectionFolder});
+  });
+  router.post('/months/:id/remove',...write,(req,res)=>{
+    const b=req.body;companyFor(config,req.user,b.companyId);
+    const entry=store.folders(req.user.id,b.companyId).find(m=>m.id===req.params.id);if(!entry)fail('FiBu-Eintrag nicht gefunden.',404);
+    if(store.profileActive(req.user.id,b.companyId,entry.id))fail('Laufenden Prüflauf zuerst beenden oder abbrechen.',409);
+    store.putFolder(req.user.id,b.companyId,entry.id,{...entry,removedAt:new Date().toISOString()});res.json({removed:true});
+  });
+  router.post('/months/:id/restore',...write,(req,res)=>{
+    const b=req.body;companyFor(config,req.user,b.companyId);
+    const entry=store.folders(req.user.id,b.companyId,{includeHidden:true}).find(m=>m.id===req.params.id&&m.removedAt);if(!entry)fail('Entfernter Eintrag nicht gefunden.',404);
+    store.putFolder(req.user.id,b.companyId,entry.id,{...entry,removedAt:null});res.json({restored:true});
+  });
   router.post('/months',...write,async(req,res)=>{
     const b=req.body,c=companyFor(config,req.user,b.companyId),month=config.mode==='cloud'&&/^20\d{2}-(0[1-9]|1[0-2])$/.test(b.month)?b.month:monthFromFolder(b.monthFolderPath);
     if(b.monthFolderPath.length>2000||typeof b.bankPdfPath!=='string'||b.bankPdfPath.length>2000||b.monthFolderPath.split(/[\\/]/).includes('..')||b.bankPdfPath.split(/[\\/]/).includes('..'))fail('Ungültige Ordner-/Dateipfade.',400);
@@ -42,7 +57,8 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     if(b.id&&!existing)fail('FiBu-Eintrag nicht gefunden.',404);
     if(existing&&store.hasActive(b.companyId,month))fail('Während einer Prüfung die Pfade nicht ändern.',409);
     if(existing&&existing.month!==month)fail('Prüfmonat eines Eintrags nicht ändern.',400);
-    const folderId=existing?.id||(b.create===true?require('node:crypto').randomUUID():month);
+    const removedLegacy=store.folders(req.user.id,b.companyId,{includeHidden:true}).some(m=>m.id===month&&m.removedAt);
+    const folderId=existing?.id||(b.create===true||removedLegacy?require('node:crypto').randomUUID():month);
     if(store.isClosed(b.companyId,month,folderId))fail('Abgeschlossenen Monat zuerst wieder öffnen.',409);
     if(b.name!==undefined&&(typeof b.name!=='string'||!b.name.trim()||b.name.trim().length>120))fail('Name mit 1 bis 120 Zeichen angeben.',400);
     if(b.label!==undefined&&(typeof b.label!=='string'||b.label.length>80))fail('Bezeichnung bis 80 Zeichen verwenden.',400);
