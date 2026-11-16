@@ -9,5 +9,8 @@ test('Jenkins-Konfiguration bewahrt bestehende Login-Werte und sichert private K
   const env=fs.readFileSync(path.join(root,'.env'),'utf8');assert.match(env,/SESSION_SECRET=synthetic-session/);assert.equal(env.split('FIBU_RUNNER_SECRET=').length,2);assert.ok(fs.readdirSync(path.join(root,'data')).some(n=>n.startsWith('fibu-env-backup-')));
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'data/fibu.config.json'),'utf8')),config);
   assert.throws(()=>configure(root,{config:{...config,mode:'local'},runnerSecret}));assert.throws(()=>configure(root,{config,runnerSecret:'weak'}));
+  const cloud={...config,mode:'cloud',companies:{tc:{...config.companies.tc,cloud:{rootPath:'SyntheticCompany'}}}};
+  assert.equal(configure(root,{config:cloud}).mode,'cloud');const cloudEnv=fs.readFileSync(path.join(root,'.env'),'utf8');assert.ok(!cloudEnv.includes('FIBU_RUNNER_SECRET='));const key=cloudEnv.match(/^FIBU_TOKEN_KEY=(.+)$/m)[1];assert.equal(Buffer.from(key,'base64').length,32);
+  configure(root,{config:cloud});assert.equal(fs.readFileSync(path.join(root,'.env'),'utf8').match(/^FIBU_TOKEN_KEY=(.+)$/m)[1],key);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

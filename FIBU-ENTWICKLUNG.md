@@ -1,78 +1,55 @@
-# Astra FIBU - lokaler Entwicklungsstand
+# Astra FIBU – Serverbetrieb
 
-Entwicklungsbranch: `codex/astra-fibu`. Keine Veröffentlichung, kein Push, keine Änderung der laufenden Produktion. Basis ist das tatsächliche Holding-Portal mit Express, SQLite und bestehenden Sessions. Der Vorschau-Worker ersetzt dessen Anmeldung nicht.
+Astra erweitert das vorhandene private Holding-Portal (Express, SQLite, bestehende Login-Sessions). Der gewünschte Standard ist `mode: cloud`: Die Prüfung wird auf dem Server ausgeführt und kann vom Handy gestartet werden. Der Windows-PC, sein OneDrive-Synchronisationsclient und ein Windows-Dienst werden dafür nicht benötigt.
 
-## Lokal ansehen
+## Ablauf
 
-Node ab 22.13, für den geprüften Stand wurde Node 24.14.1 verwendet.
+1. Im privaten Bereich TestConsulting → Finanzbuchhaltung öffnen und das berechtigte Microsoft-Konto verbinden.
+2. Über „+ Monat“ den OneDrive-Ordner Jahr/Monat und die konkrete Original-Bank-PDF wählen. Speichern startet keine Verarbeitung.
+3. „Prüfung starten“ beauftragt einen asynchronen Serverlauf. OneDrive-Dateien werden direkt heruntergeladen; die Quelle bleibt unverändert. Jede Arbeitskopie erhält Herkunft und Version. Eine während des Downloads geänderte Datei wird abgewiesen.
+4. Kontoinhaber, konfigurierte IBAN, Auszugszeitraum, Anzahl und Salden des unterstützten Sparkassenlayouts werden geprüft. Erst danach werden E-Post und Belege verarbeitet.
+5. Der Nutzer sieht den Status, offene Buchungen, Belege und die markierte PDF in der Website. Er kann die Seite schließen und später zurückkehren; die Verarbeitung läuft auf dem Server weiter. Ein abgebrochener Serverprozess wird zur Prüfung angehalten und nicht still automatisch erneut gestartet.
 
-```powershell
-cd backend
-npm.cmd ci
-npm.cmd test
-npm.cmd run fibu:demo
-```
+## Zugriff und Speicherung
 
-Die Demo bindet ausschließlich `127.0.0.1:4088`, nutzt eine eigene temporäre Datenbank und synthetische PDFs. Anmeldung und Demo-Passwort werden im Terminal ausgegeben. Danach `/intern#fibu-tc` öffnen. Der bekannte Demo-Zugang wird niemals in der produktiven Datenbank angelegt. Demo mit Strg+C beenden. Der Demo-Start lädt keine produktive `.env`.
+- Zugriff nur mit der bestehenden Portal-Anmeldung, Firmenberechtigung und CSRF-Prüfung. Neue Aufträge, Bestätigungen und Dateiabrufe sind benutzergebunden. Firma/Monat haben eine globale Sperre gegen parallele Läufe.
+- Microsoft verwendet die eigene mandantenbeschränkte Public-Client-App mit delegierten Rechten `User.Read`, `Mail.ReadWrite.Shared`, `offline_access` und im Cloud-Modus zusätzlich `Files.Read`. Der OneDrive-Zugriff liest ausschließlich unter der konfigurierten Firmenwurzel. Es gibt keine OneDrive-Schreib-/Löschoperationen.
+- Microsoft-Zugänge werden mit AES-256-GCM in SQLite verschlüsselt. Der private `FIBU_TOKEN_KEY` liegt getrennt in der Serverumgebung. Benutzer/Firma sind kryptografisch gebunden. Refresh ist über Neustarts möglich; „Verbindung trennen“ entfernt den gespeicherten Zugang. Microsoft kann jederzeit eine erneute Anmeldung verlangen.
+- Pre-authentifizierte OneDrive-Downloadadressen bleiben im Serverprozess. Kein Graph-Bearer wird an deren Downloadhost weitergereicht; Ziele, Größe, Dateiversion und verfügbare SHA-1-Quellprüfsummen werden geprüft. Die Ergebnisablage verwendet zusätzlich SHA-256.
+- Arbeitskopien und Ergebnisse liegen im privaten Datenvolume unter `fibu-cloud/<Firma>/<Benutzer>/`. Jede Bankrevision erhält einen eigenen Jobordner. Originale in OneDrive werden nicht umbenannt, überschrieben oder gelöscht.
+- `pilotMode: true` sperrt Outlook-Kategorien/Erledigt-Markierungen sowie den produktiven Monatsabschluss. Ohne Pilotmodus wird Outlook erst nach vollständiger verifizierter Belegablage markiert. Eine vollständig gelesene Bank ist kein automatisch abgeschlossener Monat.
 
-## Implementiert
+## Belegprüfung
 
-- Finanzbuchhaltung unter TestConsulting, AC Immo Invest und Holding; Freischaltung und Benutzerberechtigung je Firma. AC Immo/Holding zusätzlich mit `pilotAccepted`, ProPersonalTeam nicht aktiviert.
-- Monatsübersicht nach der gelieferten Cockpit-Vorlage: breite Karten mit blauer Kante, Fortschritt, PDF/Ordner/Pfad-Aktionen und grünem Play-Button. Monate/Pfade werden in Dialogen gespeichert; Speichern startet keinen Prüflauf. Die Detailansicht bleibt der PDF-/Belegprüfung vorbehalten.
-- Bestehende Session-Anmeldung, CSRF- und Origin-Prüfung. Alle Job-/Dateiabfragen sind nach Benutzer und Firma beschränkt.
-- Dauerhafte SQLite-Jobs, globaler Doppelstartschutz je Firma/Monat, Abbruch, Protokoll, klare Trennung von Startversuch und erfolgreicher Dokumentprüfung. Monatsabschluss erfordert eine gesonderte Aktion und scheitert bei offenen Belegen/Quellfehlern.
-- Monat ausschließlich aus dem Ordner `Jahr/Monat`. Realpath-Prüfung gegen Firmenwurzel einschließlich Junction-/Symlink-Ausbruch. Bank muss im Monatsordner liegen. Originalhash, IBAN, Kontoinhaber und ausdrücklich lesbarer Auszugszeitraum werden vor Dokument-Schreibaktionen geprüft.
-- Textbasierte Bank-PDFs, stabile Buchungs-IDs samt Seitenkoordinaten, dokumentierter konservativer Parser. Unbekannte Layouts werden nicht als erfolgreich gelesen ausgegeben.
-- Lokale Bestandsbelege plus Sammelordner, Firmen-/Betrags-/Referenzprüfung, manuelle Zuordnung/Aufhebung, referenzbasierte Teil-/Sammelzahlungen mit geprüfter Summe. _Astra-Kopien werden exklusiv und hashverifiziert geschrieben, Kollisionen aufgelöst; keine Originaldatei wird überschrieben oder gelöscht.
-- Grün nur für positive Zahlungen mit identifizierter konfigurierter Gegenpartei; Belegstatus bleibt separat. Lila-Regeln mit PayCenter-/Abrechnungsgebühr-Ausschluss, gelb erst nach verifizierter Belegablage.
-- Markierungen immer auf Basis der unveränderten Originalbank neu erzeugt. Vorhandene Inhalte/Annotationen bleiben erhalten. Text und Seitenzahl werden nach dem Speichern gegengeprüft.
-- Microsoft-Device-Code-Anmeldung mit Token ausschließlich im Serverspeicher, Refresh und Trennung. Graph-E-Post-Import inkl. gezielter historischer Hays-Referenzsuche, nachvollziehbarer Herkunft und Anhangshash. Outlook-Kategorien werden ergänzt statt ersetzt, ASTRA-Schreibweise im gelesenen Posteingang wiederverwendet, vorhandenes ETag schützt vor konkurrierender Änderung. Erledigt-Markierung erst nach vollständiger verifizierter lokaler Ablage; Teilfehler bleiben offen.
-- Windows-Ausführungsdienst über ausgehendes HTTPS-Polling. Kein offener Windows-Port, kein Tunnel, keine Shell-Ausführung aus Portalparametern. Der Dienst führt nur ausdrücklich angelegte Jobs aus. Firmengebundener 256-Bit-Kopplungsschlüssel, exklusive Auftragsübernahme, kurzlebige Auftragskopplung und Heartbeats. Verwaiste Aufträge werden zur Prüfung angehalten und nicht automatisch erneut ausgeführt.
-- Private Ergebnisübertragung zurück ins Portal mit Hashprüfung, Zugriff nur auf eigene Jobs. Private Ergebnisdateien liegen unter `backend/data/fibu-remote` bzw. neben der konfigurierten Datenbank. Manuelle Aufhebung/Zuordnung wird im Remote-Modus ebenfalls durch den Windows-Dienst ausgeführt.
+Betrag allein erzeugt keine automatische Zuordnung. Betrag plus Rechnungsreferenz oder eindeutiger Rechnungssteller werden benötigt; widersprüchliche Summen und mehrfach passende Belege bleiben offen. Teil-/Sammelzahlungen werden nur bei eindeutigen Referenzen und geprüfter Gesamtsumme bestätigt.
 
-## Einrichtung für einen echten TestConsulting-Pilot
+Grün kennzeichnet konfigurierte positive Gutschriften; der Beleg kann trotzdem fehlen. Lila folgt den ausdrücklich konfigurierten betrieblichen Ausnahmen. PayCenter-Abrechnungsgebühren bleiben belegpflichtig. Gelb bedeutet verifizierte Ablage eines Belegs. Eigene Markierungen werden stets aus der unveränderten Bank neu erzeugt; Text und Seitenzahl werden anschließend geprüft.
 
-1. `backend/fibu.config.example.json` nach `backend/data/fibu.config.json` kopieren. Tatsächlich synchronisierte Firmenwurzel, vorhandenen Sammelordner, verifizierten Kontoinhaber/IBAN sowie erlaubte Login-E-Mail-Adressen eintragen. TestConsulting erst danach aktivieren. In einer Arbeitskopie des Monats testen.
-2. Zuerst alles lokal: `FIBU_CONFIG_PATH` auf diese Datei setzen, `mode: local`, normalen Backend-Start verwenden. Bestehende Portalbenutzer anmelden; keine fremde Header-Identität.
-3. Microsoft-Entra-App im eigenen Tenant registrieren und Device-Code/Public-Client-Anmeldung freigeben lassen. Delegierte Berechtigungen: `User.Read`, `Mail.ReadWrite.Shared` (eigene und freigegebene Postfächer) sowie `offline_access`. Keine Versandberechtigung. Tenant-/Client-ID sind Konfigurationswerte, kein Client-Secret wird benötigt. Zugriff des angemeldeten Benutzers auf `epost@testconsulting.de` muss bestehen. Neue Berechtigungen werden ausschließlich durch den Nutzer/Admin freigegeben.
-4. Die Microsoft-Verbindung ist für erlaubte Portalbenutzer bereits möglich, solange die Buchhaltungsverarbeitung noch gesperrt ist. „Postfachzugriff prüfen“ liest nur die angemeldete Identität und Posteingangsmetadaten; Nachrichten und Kategorien bleiben unverändert. Im FIBU-Bereich „Microsoft verbinden“, den angezeigten Code auf der Microsoft-Seite bestätigen und „Anmeldung prüfen“ wählen. Die Verbindung ist nach Backend-Neustart erneut nötig; Tokens werden nicht auf Platte/Git/Browser-JavaScript gespeichert.
-5. Für das spätere getrennte Produktionsportal: Portal-Konfiguration auf `mode: remote` setzen. Gleichen zufälligen `FIBU_RUNNER_SECRET` und `FIBU_RUNNER_COMPANY=tc` auf beiden Systemen sicher hinterlegen. `FIBU_PORTAL_URL=https://www.ceremesiz-holding.de` nur auf Windows setzen. Windows verwendet seine eigene Konfiguration mit `mode: local` und den dort tatsächlich existierenden Pfaden. Dienst manuell mit `npm.cmd run fibu:runner` starten. Ohne Dienst bleibt ein ausdrücklich angelegter Auftrag in der Warteschlange.
-6. Konfiguration für den Produktionscontainer unter dem bereits vorhandenen privaten `backend/data`-Volume ablegen. Dockerfile und Nginx-Beispiel wurden für Bibliotheken und authentifizierte Ergebnisübertragung vorbereitet. Änderungen wurden nicht deployed. Die Beispielkonfiguration muss vor einem später gesondert freigegebenen Deployment mit der tatsächlichen Serverkonfiguration abgeglichen werden.
+`ocrEnabled: true` liest Bilder und gescannte PDFs lokal auf dem ausführenden Server. Deutsch/Englisch und Modelle werden mit der Anwendung installiert; Dokumente werden an keinen OCR-Anbieter übertragen. Maximal zehn Seiten, 16 Millionen Pixel je Seite und 120 Sekunden je Dokument. OCR läuft in einem getrennten Prozess und liefert ausschließlich prüfpflichtige Vorschläge. Automatisches Matching bleibt bis zur Bestätigung am Original gesperrt. Firma, EUR-Bruttobetrag, Rechnungssteller, Referenz, Datum, Benutzer, Hash und Begründung werden für diese Bestätigung gespeichert.
 
-Die Kopplung berechtigt genau den konfigurierten Firmen-Dienst zur Auftragsbearbeitung und zum Lesen/Zurückliefern der für diese Jobs benötigten Dateien. Der Schlüssel ist wie ein Passwort zu schützen und bei Verlust auf beiden Seiten zu ersetzen. Keine echten Pfade, IBANs, Tokens oder Schlüssel committen.
+## Portalquellen
 
-## Verifizierter Stand und Abgrenzung
+„Belegquellen & Portalzugänge“ zeigt STRATO, B2Mobility/FuelsCard, Microsoft-Rechnungsportal, Amazon, HUK und Sachbezugskarte. Die Lieferantenportale werden auf ausdrücklichen Wunsch erst nach der funktionierenden Basis ergänzt. Sie sind als vorgemerkt und Anmeldung ungeprüft ausgewiesen. Keine Quelle wird fälschlich als automatisch geprüft dargestellt.
 
-Am 16.11.2026 wurde die echte Microsoft-Anmeldung mit der eigenen mandantenbeschränkten App und den delegierten Rechten User.Read, Mail.ReadWrite.Shared und offline_access geprüft. Der E-Post-Posteingang war erreichbar (131 Nachrichten zum Prüfzeitpunkt). Die ausdrücklich genehmigte Vollzugriffsdelegierung für Taner wurde ergänzt; bestehende Mitglieder blieben erhalten. Tokens bleiben nur im Prozessspeicher. Neustart erfordert erneut Microsoft verbinden.
+Ein geschützter manueller PDF-/Bildimport ist vorbereitet. Er speichert Herkunft und Hash, bestätigt keine Firma und startet keinen Lauf. Backend-Limit: 25 MB je Datei. Der produktive Reverse Proxy muss das konfigurierte Upload-Limit ebenfalls zulassen. OneDrive-Leseabrufe benötigen keine großen eingehenden HTTP-Requests an das Portal.
 
-Der bestätigte Pilot verwendet TestConsulting, Oktober 2026, Kontoendung 4831 ausschließlich in einem Arbeitsordner unter Documents/Codex. Der tatsächliche Sparkassen-Druckansichtparser liest 147 Buchungen auf acht Seiten mit bestandener Anzahl- und Saldenkontrolle. Der echte E-Post-/Dateiabgleich ergab sieben Zuordnungen und 51 Buchungen ohne Belegpflicht. 89 Buchungen blieben offen. Die Bankdatei in OneDrive und die unveränderte Originalkopie blieben hashidentisch. Die markierte PDF wurde auf Text- und Seitenzahlerhalt geprüft; gelbe, grüne und lila Bereiche wurden gerendert und visuell kontrolliert.
+## Einrichtung und Veröffentlichung
 
-### OCR und manuelle Prüfung
+- `backend/fibu.config.example.json` enthält das Cloud-Schema. Echte Konfiguration ausschließlich unter `backend/data/`; keine Zugangsdaten oder Finanzdaten committen.
+- TestConsulting zunächst allein aktivieren. Verifizierte Kontozuordnung, berechtigte Portal-E-Mails sowie relativen OneDrive-Firmenordner, Monatsbasis und Sammelordner eintragen. AC Immo/Holding bleiben bis eigener Konfiguration und Abnahme gesperrt.
+- Jenkins-Job `ceremesiz` verwendet `/var/www/ceremesiz-app`. `Jenkinsfile` sichert Datenbank, bisheriges Image und private Konfiguration, aktualisiert main per Fast-Forward, baut und testet das Image isoliert ohne externes Netzwerk, konfiguriert FIBU und prüft anschließend den gestarteten Dienst.
+- Das maskierte Secret-Text-Binding `astra-fibu-cloud-bootstrap` enthält `{"config": <private Cloud-Konfiguration>}`. Es enthält keinen Windows-Kopplungsschlüssel. `backend/scripts/configure-fibu.cjs` erzeugt den Verschlüsselungsschlüssel einmalig und erhält bestehende Portal-Loginwerte. Schlüssel und Tokens erscheinen nicht im Buildprotokoll.
+- Fehlgeschlagene Veröffentlichung stellt das vorherige Image und die private Konfiguration wieder her. Die Datenbank wird nicht automatisch auf einen alten Stand zurückgesetzt. Sicherungen liegen im privaten Datenvolume.
+- `mode: local` und `mode: remote` bleiben für ältere lokale Integrationen vorhanden. Der Windows-Runner ist für den gewünschten Cloud-Betrieb nicht erforderlich und wird dafür nicht eingerichtet.
 
-- `ocrEnabled: true` aktiviert lokale OCR für Bilder und PDFs ohne ausreichende Textschicht. Deutsch und Englisch werden zusammen mit der Anwendung installiert. Zur Laufzeit findet kein Modell-Download und keine Übertragung an einen OCR-Anbieter statt.
-- OCR läuft seriell in einem getrennten Prozess, mit maximal zehn Seiten, 16 Millionen Pixeln pro Seite und 120 Sekunden je Beleg. Fehler bleiben sichtbar und verhindern keine Prüfung anderer Belege.
-- OCR-Daten sind Vorschläge. Automatische Einzel-, Teil- und Sammelzuordnung sind bis zur Bestätigung am Original gesperrt. Die Belegprüfung erfasst Firma, EUR-Bruttobetrag, Rechnungssteller, Referenz, Datum und Begründung; bestätigt wird nur mit ausdrücklich gesetzter Originalprüfung. Benutzer, Firma und Dateihash begrenzen die dauerhafte Bestätigung. Eine geänderte Datei übernimmt keine alte Bestätigung.
-- Der ergänzende Offline-Test mit echten Kopien las acht Scanbelege per OCR. Alle acht blieben prüfpflichtig; die Zahl automatischer Zuordnungen wurde nicht künstlich erhöht.
-- Nicht alle Lieferantenlayouts liefern eindeutig beschriftete Beträge oder Firmen. Solche Dokumente benötigen die Belegprüfung; keine Steuer- oder Buchungsentscheidung wird automatisiert.
+## Validierung
 
-### Lieferantenquellen
+`cd backend; npm.cmd test` führt die synthetischen Regressionstests aus. Zusätzlich vorhanden: echte lokale HTTP-Kopplung, Cloud-HTTP-Auftrag ohne Windows-Dienst, OneDrive-Transport-/Revisionsprüfung, verschlüsselte Tokenablage samt Neustart, OCR auf Bildern und Scan-PDF, authentifizierter Import und manuelle Belegbestätigung. Graph-Protokolltests sind Mocks und werden nicht als echte Cloud-Verbindung ausgegeben.
 
-Auf ausdrücklichen Wunsch werden STRATO, B2Mobility/FuelsCard, Microsoft-Rechnungsportal, Amazon, HUK und Sachbezugskarte später einzeln angebunden. Die Oberfläche zeigt unter „Belegquellen & Portalzugänge“ alle vorgemerkten Quellen, vorhandene Portaladressen und den ungeprüften Anmeldestatus. Keine dieser Quellen wird derzeit automatisch geprüft.
+Der echte Dateikopien-Pilot vom 16.11.2026 erkannte 147 Buchungen über acht Seiten mit bestandener Anzahl- und Saldenkontrolle. Sieben Belege wurden zugeordnet, 51 Buchungen folgten den Ausnahmen ohne Belegpflicht und 89 blieben offen. Acht Scanbelege wurden per OCR gelesen und blieben prüfpflichtig. Bankoriginal und Originalkopie blieben hashidentisch; Markierungen wurden zusätzlich visuell geprüft.
 
-Heruntergeladene PDF-/Bildbelege lassen sich bereits geschützt importieren. Herkunft, Originalname, Benutzer und SHA-256 werden gespeichert. Import startet keinen Lauf und bestätigt keine Zuordnung. Der gekoppelte Windows-Dienst übernimmt diese Dateien hashgeprüft in seinen Sammelordner. Sitzungsanmeldung, CSRF, Firmenberechtigung, Dateisignatur und Größenbegrenzung gelten auch für den Import.
+Die direkte OneDrive-Verbindung wurde mit dem ausdrücklich freigegebenen Leserecht am 16.11.2026 real bestätigt: Konto stimmt überein, FIBU-Monatsbasis und E-Post erreichbar. Der vollständige direkte OneDrive-/E-Post-Pilot und das produktive Deployment werden im laufenden Auftrag abschließend verifiziert; der lokale Start allein ist kein Nachweis eines erfolgreichen Deployments.
 
-### Gekoppelter Betrieb und Deployment
+Der Junction-Test wird in dieser Windows-Sandbox übersprungen, weil sie das Erstellen solcher Verknüpfungen blockiert. Traversal und fremde absolute Pfade sind tatsächlich getestet. Belege maximal 25 MB, OneDrive-Quellen maximal 100 MB je Lauf. OneDrive-Unterordner werden nicht rekursiv als Belege eingelesen. Unbekannte Layouts, OCR-Unsicherheit und fachliche Widersprüche bleiben offen.
 
-Jenkins-Job: ceremesiz. Bisheriger produktiver Stand: 8b763a4, Verzeichnis /var/www/ceremesiz-app, Docker-Service backend, Host-Port 127.0.0.1:4010. Der Read-only-Preflight Build 23 war erfolgreich; bislang existieren dort weder FIBU-Konfiguration noch Runner-Schlüssel.
-
-`Jenkinsfile` bereitet die Veröffentlichung über den bestehenden Job vor: Sicherung von SQLite, Konfiguration und bisherigem Image, Fast-Forward aus main, isolierte Tests im neuen Image ohne externes Netzwerk, private Einrichtung über ein maskiertes Jenkins-Secret-Text-Binding `astra-fibu-tc-bootstrap`, Deployment und Healthcheck. Fehler stellen Image und private Konfiguration wieder her; die laufende Datenbank wird nicht automatisch durch eine alte Sicherung ersetzt.
-
-`backend/scripts/configure-fibu.cjs` verarbeitet das private Binding mit `config` und `runnerSecret`. Der Schlüssel steht nicht in Git oder im Pipeline-Skript. Vorhandene Session-/Login-Konfiguration bleibt erhalten. `backend/scripts/start-local-runner.cjs` liest ausschließlich die ignorierte Datei `backend/data/fibu-runner.private.json` (Portal-URL, Schlüssel, Firma, lokaler Konfigurationspfad). Start erfolgt manuell; es wird kein Zeitplan installiert. Der Runner pollt ausdrücklich angelegte Aufträge und meldet seine Erreichbarkeit. Der Windows-Rechner muss für die Dateiverarbeitung eingeschaltet und verbunden sein.
-
-`pilotMode: true` bleibt für die bestätigte Arbeitskopie aktiv: keine Outlook-Kategorien oder Erledigt-Markierungen, kein produktiver Monatsabschluss, keine Veränderung der Originalordner. Die Produktionswebsite kann diesen Pilotmodus bereitstellen; dies ist keine Freigabe zur Verarbeitung von Originalordnern.
-
-### Validierung und verbleibende Grenzen
-
-Die automatisierten Tests verwenden synthetische Daten. Aktuell: 24 Tests, 23 bestanden, kein Fehler; ein Junction-Test wird unter dieser Windows-Sandbox übersprungen, weil sie das Erstellen der Verknüpfung blockiert. Traversal und externe absolute Pfade sind tatsächlich geprüft. Das reale Sparkassenlayout, OCR auf Dateikopien und der reale E-Post-Pilot sind zusätzliche Integrationsprüfungen; Graph-Protokolltests bleiben Mocks. Browsergeprüft sind Quellenübersicht und Belegbestätigung mit synthetischer Vorlage.
-
-Dateien maximal 25 MB, Rückübertragung maximal 70 MB pro Auftrag; größere Ergebnisse bleiben Teilfehler. OneDrive wird über seinen synchronisierten Windows-Ordner gelesen. AC Immo und Holding bleiben bis zu eigener Konfiguration und TestConsulting-Abnahme gesperrt. Kein Collmex, keine Zahlungen, kein E-Mail-Versand, kein DATEV-Upload, keine automatische Monatsfreigabe, keine Zeitpläne.
+Keine Zeitpläne, keine Zahlungen, kein Collmex, kein E-Mail-Versand und kein DATEV-Upload.

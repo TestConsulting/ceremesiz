@@ -1,23 +1,26 @@
 const {fail}=require('./core');
-const sessions=new Map();
 const fetchJson=async(url,options={})=>{
   const r=await fetch(url,{...options,signal:AbortSignal.timeout(30000),redirect:'error'});
   const data=await r.json();
   if(!r.ok) throw Object.assign(new Error('Microsoft-Anfrage fehlgeschlagen ('+r.status+'). Anmeldung/Berechtigung prüfen.'),{status:502,oauthCode:data.error});
   return data;
 };
-function microsoft(config) {
+function microsoft(config,{vault=null}={}) {
+  const sessions=new Map(),refreshing=new Map();
+  const session=(o,c)=>{const k=key(o,c);if(!sessions.has(k)){const saved=vault?.get(o,c);if(saved)sessions.set(k,saved);}return sessions.get(k);};
+  const save=(o,c,s)=>{sessions.set(key(o,c),s);if(s.access_token)vault?.put(o,c,s);};
   const m=config.microsoft;
   const authority=m && /^[a-z0-9.-]+$/i.test(m.tenantId) && /^[a-z0-9-]+$/i.test(m.clientId) ? `https://login.microsoftonline.com/${m.tenantId}/oauth2/v2.0` : null;
   const key=(owner,company)=>`${owner}:${company}`;
   const form=(body)=>({method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body)});
   async function token(owner,company) {
-    const s=sessions.get(key(owner,company));
+    const s=session(owner,company);
     if(!s?.access_token) fail('Microsoft nicht verbunden.',409);
     if(s.expiresAt<Date.now()+60000) {
       if(!s.refresh_token) fail('Microsoft-Anmeldung abgelaufen.',409);
-      const t=await fetchJson(authority+'/token',form({client_id:m.clientId,grant_type:'refresh_token',refresh_token:s.refresh_token}));
-      Object.assign(s,t,{expiresAt:Date.now()+t.expires_in*1000});
+      const k=key(owner,company);
+      if(!refreshing.has(k))refreshing.set(k,fetchJson(authority+'/token',form({client_id:m.clientId,grant_type:'refresh_token',refresh_token:s.refresh_token})).then(t=>{Object.assign(s,t,{expiresAt:Date.now()+t.expires_in*1000});save(owner,company,s);}).finally(()=>refreshing.delete(k)));
+      await refreshing.get(k);
     }
     return s.access_token;
   }
@@ -28,11 +31,13 @@ function microsoft(config) {
   }
   return {
     configured:!!authority,
-    connected:(o,c)=>!!sessions.get(key(o,c))?.access_token,
-    disconnect:(o,c)=>sessions.delete(key(o,c)),
+    connected:(o,c)=>!!session(o,c)?.access_token,
+    disconnect:(o,c)=>{sessions.delete(key(o,c));vault?.delete(o,c);},
+    driveList:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).list(o,c,p),
+    driveDownload:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).download(o,c,p),
     async begin(o,c) {
       if(!authority) fail('Microsoft-App ist nicht konfiguriert.',503);
-      const t=await fetchJson(authority+'/devicecode',form({client_id:m.clientId,scope:'offline_access User.Read Mail.ReadWrite.Shared'}));
+      const t=await fetchJson(authority+'/devicecode',form({client_id:m.clientId,scope:'offline_access User.Read Mail.ReadWrite.Shared'+(config.mode==='cloud'?' Files.Read':'')}));
       sessions.set(key(o,c),{...t,nextPoll:Date.now()+t.interval*1000,expiresAt:Date.now()+t.expires_in*1000});
       return {userCode:t.user_code,verificationUri:t.verification_uri,expiresIn:t.expires_in,interval:t.interval};
     },
@@ -44,7 +49,7 @@ function microsoft(config) {
       s.nextPoll=Date.now()+s.interval*1000;
       try {
         const t=await fetchJson(authority+'/token',form({client_id:m.clientId,grant_type:'urn:ietf:params:oauth:grant-type:device_code',device_code:s.device_code}));
-        sessions.set(key(o,c),{...t,expiresAt:Date.now()+t.expires_in*1000});
+        save(o,c,{...t,expiresAt:Date.now()+t.expires_in*1000});
         return {connected:true};
       } catch(e) {
         if(e.oauthCode==='authorization_pending') return {connected:false};

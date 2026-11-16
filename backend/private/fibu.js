@@ -33,7 +33,7 @@ async function viewFibu(company,selectedMonth=null) {
   const form=$('#fibuStart');form.folder.oninput=()=>$('#fibuMonth').textContent=fibuMonth(form.folder.value);
   let jobs=[],current=null,companyState=null;
   function draw(job) {
-    current=job;form.folder.value=job.monthFolderPath;form.bank.value=job.bankPdfPath;$('#fibuMonth').textContent=job.month;
+    current=job;form.folder.value=job.sourceMonthPath||job.monthFolderPath;form.bank.value=job.sourceBankName||job.bankPdfPath;$('#fibuMonth').textContent=job.month;
     const active=['queued','running'].includes(job.state),txs=job.transactions||[];
     $('#fibuPlay').disabled=active;
     $('#fibuStatus').innerHTML=`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p><p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
@@ -78,7 +78,7 @@ async function viewFibu(company,selectedMonth=null) {
   try {
     const state=await fibuApi('/companies');if(generation!==fibuGeneration)return;
     const c=state.companies.find(c=>c.id===company);companyState=c;
-    $('#fibuConnection').innerHTML=c?.enabled?`${state.mode==='remote'?'Gekoppelter Windows-Dienst':'Lokaler Ausführungsmodus'} · OneDrive über synchronisierten Firmenordner · E-Post: ${c.connected?'verbunden':'nicht verbunden'}.
+    $('#fibuConnection').innerHTML=c?.enabled?`${state.mode==='cloud'?'Serverbetrieb · OneDrive direkt · unabhängig vom PC':state.mode==='remote'?'Gekoppelter Windows-Dienst · synchronisierter Firmenordner':'Lokaler Ausführungsmodus · synchronisierter Firmenordner'} · E-Post: ${c.connected?'verbunden':'nicht verbunden'}.
       ${c.microsoftConfigured?'<button id="fibuMicrosoft">Microsoft verbinden</button> <button id="fibuDisconnect">Verbindung trennen</button>':'Microsoft-App noch nicht eingerichtet.'}<div id="fibuLogin"></div>`:'Diese Firma ist noch nicht für den Pilotbetrieb konfiguriert. TestConsulting zuerst einrichten und abnehmen; anschließend weitere Firmen aktivieren.';
     if(!c?.enabled)return;$('#fibuPlay').disabled=false;await load();
     if(c.microsoftConfigured){$('#fibuDisconnect').onclick=async()=>{try{await fibuApi('/microsoft/'+company+'/disconnect',{});viewFibu(company);}catch(e){error(e);}};$('#fibuMicrosoft').onclick=async()=>{

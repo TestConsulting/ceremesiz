@@ -8,16 +8,20 @@ const {createStore}=require('../fibu/store');
 const {engine}=require('../fibu/engine');
 const {microsoft}=require('../fibu/microsoft');
 const {inside,monthFromFolder,hash,fail,classify,writeVerified}=require('../fibu/core');
-module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms=microsoft(config)}) {
-  const router=express.Router(),store=createStore(db),worker=engine({store,config,ms});
+module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
+  const router=express.Router(),store=createStore(db);
+  ms=ms||microsoft(config,config.mode==='cloud'?{vault:require('../fibu/token-vault').tokenVault(db)}:{});
+  const worker=engine({store,config,ms}),cloud=require('../fibu/cloud').cloudWorker({store,worker,ms});
   store.recover();
   router.use(requireAuthApi,(req,res,next)=>{res.set('Cache-Control','no-store');next();});
   const write=[requireSameOriginJson(allowedOrigins),requireCsrf];
+  router.get('/onedrive/:companyId',async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);if(config.mode!=='cloud')fail('Direkter OneDrive-Zugriff nicht aktiviert.',409);const relative=req.query.path??c.cloud.monthBasePath??'';require('../fibu/onedrive').cleanPath(relative,{empty:true});res.json({path:relative,entries:await ms.driveList(req.user.id,req.params.companyId,relative)});});
   router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
   router.post('/imports/:companyId',...write,express.json({limit:'36mb'}),async(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId),d=require('../fibu/sources').validateImport(req.body);
-    const folder=config.mode==='local'?await inside(c.root,c.collectionFolder,'directory'):path.join(require('../fibu/runner-api').outputRoot(),'imports',String(req.user.id),req.params.companyId);
-    if(config.mode==='remote')await fs.mkdir(folder,{recursive:true,mode:0o700});
+    let folder=config.mode==='local'?await inside(c.root,c.collectionFolder,'directory'):config.mode==='cloud'?path.join(c.root,String(req.user.id),'imports'):path.join(require('../fibu/runner-api').outputRoot(),'imports',String(req.user.id),req.params.companyId);
+    if(config.mode!=='local')await fs.mkdir(folder,{recursive:true,mode:0o700});
+    if(config.mode==='cloud')folder=await inside(c.root,folder,'directory');
     const saved=await writeVerified(folder,'Portal_'+d.source+'_'+d.hash.slice(0,12)+path.extname(d.name).toLowerCase(),d.bytes);
     const record={hash:d.hash,path:saved,source:d.source,originalName:d.name,importedAt:new Date().toISOString(),importedBy:req.user.id};
     store.putImport(req.user.id,req.params.companyId,d.hash,record);
@@ -28,25 +32,33 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms=mic
     let enabled=false,canConnect=false;try{companyFor(config,req.user,id);enabled=true;}catch{}
     try{companyFor(config,req.user,id,{allowDisabled:true});canConnect=true;}catch{}
     const seen=canConnect?db.prepare('SELECT seen FROM fibu_runner_state WHERE company=?').get(id)?.seen:null;
-    return {id,name,enabled,canConnect,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,connected:canConnect&&ms.connected(req.user.id,id)};
+    return {id,name,enabled,canConnect,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,connected:canConnect&&ms.connected(req.user.id,id)};
   })}));
-  router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);res.json({months:store.folders(req.user.id,req.query.companyId)});});
+  router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);res.json({months:store.folders(req.user.id,req.query.companyId).filter(m=>config.mode!=='cloud'||m.storageMode==='cloud')});});
   router.post('/months',...write,async(req,res)=>{
     const b=req.body,c=companyFor(config,req.user,b.companyId),month=monthFromFolder(b.monthFolderPath);
     if(b.monthFolderPath.length>2000||typeof b.bankPdfPath!=='string'||b.bankPdfPath.length>2000||b.monthFolderPath.split(/[\\/]/).includes('..')||b.bankPdfPath.split(/[\\/]/).includes('..'))fail('Ungültige Ordner-/Dateipfade.',400);
     if(store.isClosed(b.companyId,month))fail('Abgeschlossenen Monat zuerst wieder öffnen.',409);
     let folderUrl='';if(b.folderUrl){try{const u=new URL(b.folderUrl);if(u.protocol!=='https:'||u.username||u.password)throw Error();folderUrl=u.href;}catch{fail('Nur gültige HTTPS-Ordnerlinks erlauben.',400);}}
     if(config.mode==='local')await inside(c.root,b.monthFolderPath,'directory');
-    const saved={companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,folderUrl};
+    if(config.mode==='cloud'){require('../fibu/onedrive').cleanPath(b.monthFolderPath);if(!/^[^\\/]+\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-PDF im OneDrive-Monatsordner wählen.',400);}
+    const saved={companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,folderUrl,storageMode:config.mode};
     store.putFolder(req.user.id,b.companyId,month,saved);res.json(saved);
   });
   router.get('/jobs',(req,res)=>{
     companyFor(config,req.user,req.query.companyId);
-    res.json({jobs:store.list(req.user.id,req.query.companyId)});
+    res.json({jobs:store.list(req.user.id,req.query.companyId).filter(j=>config.mode!=='cloud'||!!j.sourceMonthPath)});
   });
   router.post('/jobs',...write,async(req,res)=>{
     const b=req.body,c=companyFor(config,req.user,b.companyId),month=monthFromFolder(b.monthFolderPath);
     if(b.month&&b.month!==month)fail('Abweichender Monat.',400);
+    if(config.mode==='cloud'){
+      require('../fibu/onedrive').cleanPath(b.monthFolderPath);
+      if(typeof b.bankPdfPath!=='string'||! /^[^\\/\x00-\x1f]+\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-Bank-PDF wählen.',400);
+      if(!ms.connected(req.user.id,b.companyId))fail('Microsoft zuerst verbinden.',409);
+      const job=store.enqueue(req.user.id,{companyId:b.companyId,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
+      res.status(202).json(job);setImmediate(()=>cloud.run(job.id,req.user.id,c));return;
+    }
     if(config.mode==='remote') {
       if(typeof b.bankPdfPath!=='string'||b.bankPdfPath.length>2000||! /\.pdf$/i.test(b.bankPdfPath)||b.bankPdfPath.split(/[\\/]/).includes('..'))fail('Gültigen Bank-PDF-Pfad angeben.',400);
       const job=store.enqueue(req.user.id,{companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});

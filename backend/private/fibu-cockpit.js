@@ -1,7 +1,7 @@
 /* Month overview follows the supplied Astra cockpit reference. */
 async function viewFibuHome(company){
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
-  let state,c,jobs=[],months=[],contextMonth=null;
+  let state,c,jobs=[],months=[],contextMonth=null,browsePath='';
   const alive=()=>generation===fibuGeneration&&curRoute==='fibu-'+company;
   const name=month=>month.slice(5)+'/'+month.slice(0,4);
   const latest=month=>jobs.find(j=>j.month===month);
@@ -14,6 +14,7 @@ async function viewFibuHome(company){
       ${state.demo?'<div class="f-notice"><p>Beispielansicht · Ausschließlich synthetische Testdaten. Zuordnungen hier dienen nur zum Ausprobieren.</p></div>':''}
       ${c.pilotMode?'<div class="f-notice"><p>Pilotlauf mit Arbeitskopien · Originalordner bleiben erhalten. Outlook-Kategorien und Erledigt-Markierungen werden im Pilotmodus nicht verändert.</p></div>':''}
       ${state.mode==='remote'?`<div class="f-notice"><p>Windows-Verbindung: ${c.runnerOnline?'verbunden':'nicht erreichbar'}${c.runnerLastSeen?' · zuletzt '+fibuTime(c.runnerLastSeen):''}. ${c.runnerOnline?'Manuelle Prüfaufträge können ausgeführt werden.':'Neue Aufträge warten, bis der Rechner verbunden ist.'}</p></div>`:''}
+      ${state.mode==='cloud'?'<div class="f-notice"><p>Serverbetrieb · OneDrive und E-Post werden direkt verbunden. Die Prüfung läuft auch bei ausgeschaltetem PC weiter.</p></div>':''}
       ${!c.enabled?'<div class="f-notice"><p>Diese Firma ist noch nicht für den Pilotbetrieb freigeschaltet. Zuerst TestConsulting einrichten und abnehmen.</p></div>':''}
       ${c.canConnect&&c.microsoftConfigured?`<div class="f-notice"><p>${c.connected?'Microsoft ist verbunden. Der Postfachzugriff kann separat geprüft werden.':'Verbinde dein berechtigtes Microsoft-Konto für E-Post.'}</p><div class="f-actions">${c.connected?button('probe','Postfachzugriff prüfen')+button('disconnect','Verbindung trennen'):button('connect','Microsoft verbinden',true)}</div></div>`:''}
       <div id="fibuHomeError" class="f-error" role="alert"></div><p>${button('sources','Belegquellen & Portalzugänge',false,c.enabled?'':'disabled')}</p><div class="f-titlebar"><div><h2>FiBu-Monate</h2><p>Monat öffnen, Kontoauszug prüfen und fehlende Belege zuordnen.</p></div>${button('new','+ Monat',true,c.enabled?'':'disabled')}</div>
@@ -28,21 +29,31 @@ async function viewFibuHome(company){
     $('#main .fibu-cockpit').onclick=click;
   }
   async function refresh(){
+    if(document.getElementById('fibuHomeModal')?.open){clearTimeout(fibuTimer);fibuTimer=setTimeout(()=>refresh().catch(error),1500);return;}
     const [j,m]=await Promise.all([fibuApi('/jobs?companyId='+company),fibuApi('/months?companyId='+company)]);if(!alive())return;jobs=j.jobs;
-    const map=new Map(m.months.map(m=>[m.month,m]));for(const j of jobs)if(!map.has(j.month))map.set(j.month,{companyId:company,month:j.month,monthFolderPath:j.monthFolderPath,bankPdfPath:j.bankPdfPath,folderUrl:''});
+    const map=new Map(m.months.map(m=>[m.month,m]));for(const j of jobs)if(!map.has(j.month))map.set(j.month,{companyId:company,month:j.month,monthFolderPath:j.sourceMonthPath||j.monthFolderPath,bankPdfPath:j.sourceBankName||j.bankPdfPath,folderUrl:''});
     months=[...map.values()].sort((a,b)=>b.month.localeCompare(a.month));render();clearTimeout(fibuTimer);if(jobs.some(j=>['queued','running'].includes(j.state)))fibuTimer=setTimeout(()=>refresh().catch(error),1500);
   }
   function edit(m){
+    if(state.mode==='cloud'){browse(m?.monthFolderPath||c.cloudMonthBase||'').catch(error);return;}
     modal(`<h2>${m?'FiBu-Pfade ändern':'FiBu-Monat anlegen'}</h2><p>${esc(CO[company].n)} · Der Prüfmonat wird aus dem Monatsordner abgeleitet.</p><form id="fibuMonthForm"><label>FiBu-Ordnerpfad<input name="folder" required maxlength="2000" value="${esc(m?.monthFolderPath||'')}" placeholder="…\\2026\\10"></label><label>Konkrete Original-Bank-PDF<input name="bank" maxlength="2000" value="${esc(m?.bankPdfPath||'')}" placeholder="Vollständiger Dateipfad"></label><label>OneDrive-Ordnerlink (optional)<input name="url" type="url" value="${esc(m?.folderUrl||'')}" placeholder="https://…"></label><p>Abgeleiteter Prüfmonat: <strong id="fibuDerivedMonth">${m?name(m.month):'Noch nicht erkannt'}</strong></p><div id="fibuModalError" class="f-error" role="alert"></div><div class="f-dialogfoot"><button type="submit" class="primary">Monat speichern</button></div></form>`);
     const f=$('#fibuMonthForm');f.folder.oninput=()=>{const month=fibuMonth(f.folder.value);$('#fibuDerivedMonth').textContent=/^20\d{2}-\d{2}$/.test(month)?name(month):'Noch nicht erkannt';};
     f.onsubmit=async e=>{e.preventDefault();try{await fibuApi('/months',{companyId:company,monthFolderPath:f.folder.value,bankPdfPath:f.bank.value,folderUrl:f.url.value});$('#fibuHomeModal').close();await refresh();toast('FiBu-Monat gespeichert');}catch(e){$('#fibuModalError').textContent=e.message;}};
   }
+  async function browse(relative){
+    const data=await fibuApi('/onedrive/'+company+'?path='+encodeURIComponent(relative));browsePath=data.path;
+    const month=fibuMonth(browsePath),valid=/^20\d{2}-\d{2}$/.test(month);
+    modal(`<h2>OneDrive-Monatsordner wählen</h2><p>${esc(browsePath||'Firmenordner')}</p>${browsePath?button('driveUp','↑ Übergeordneter Ordner'):''}<div>${data.entries.filter(d=>d.folder).map(d=>button('driveFolder',esc(d.name),false,'data-path="'+esc((browsePath?browsePath+'/':'')+d.name)+'"')).join(' ')}</div><form id="fibuCloudMonth"><p>Prüfmonat: ${valid?esc(name(month)):'Bitte Jahr/Monat öffnen'}</p><label>Original-Kontoauszug<select name="bank" required><option value="">PDF auswählen</option>${data.entries.filter(d=>d.file&&/\.pdf$/i.test(d.name)&&!/_Astra(?:_|\.)/i.test(d.name)).map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}</select></label><p id="fibuCloudError" class="f-error" role="alert"></p><button class="primary" ${valid?'':'disabled'}>Monat speichern</button></form>`);
+    const f=$('#fibuCloudMonth');f.onsubmit=async e=>{e.preventDefault();try{await fibuApi('/months',{companyId:company,monthFolderPath:browsePath,bankPdfPath:f.bank.value});$('#fibuHomeModal').close();await refresh();toast('OneDrive-Monat gespeichert');}catch(e){$('#fibuCloudError').textContent=e.message;}};
+  }
   async function click(e){
     const b=e.target.closest('[data-fibu]');if(!b)return;const action=b.dataset.fibu,month=b.closest('[data-month]')?.dataset.month||contextMonth,m=months.find(m=>m.month===month);contextMonth=month;
     try{
+      if(action==='driveFolder'){await browse(b.dataset.path);return;}
+      if(action==='driveUp'){await browse(browsePath.split('/').slice(0,-1).join('/'));return;}
       if(action==='sources'){
         const data=await fibuApi('/sources/'+company);
-        modal(`<h2>Belegquellen &amp; Portalzugänge</h2><p>E-Post: ${c.connected?'verbunden':'nicht verbunden'} · Firmenordner: synchronisierter Windows-Ordner.</p><p>Lieferantenportale sind für eine spätere Erweiterung vorgemerkt. Es wird aktuell kein Portal automatisch geprüft.</p><table style="width:100%;text-align:left"><thead><tr><th>Quelle</th><th>Status</th></tr></thead><tbody>${data.sources.map(s=>`<tr><td>${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)} ↗</a>`:esc(s.name)}</td><td>Vorgemerkt · ${s.url?'Adresse hinterlegt':'Adresse fehlt'} · Anmeldung ungeprüft</td></tr>`).join('')}</tbody></table><h3>Heruntergeladenen Beleg importieren</h3><p>PDF oder Bild in den Sammelordner übernehmen. Der Import bestätigt noch keine Firma oder Zuordnung und startet keinen Prüflauf.</p><form id="fibuImportForm"><label>Quelle<select name="source">${data.sources.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label><label>Datei<input name="file" type="file" accept=".pdf,.png,.jpg,.jpeg" required></label><p id="fibuImportStatus" role="status"></p><button class="primary">Beleg importieren</button></form>`);
+        modal(`<h2>Belegquellen &amp; Portalzugänge</h2><p>E-Post: ${c.connected?'verbunden':'nicht verbunden'} · Firmenordner: ${state.mode==='cloud'?'OneDrive direkt auf dem Server':'synchronisierter Windows-Ordner'}.</p><p>Lieferantenportale sind für eine spätere Erweiterung vorgemerkt. Es wird aktuell kein Portal automatisch geprüft.</p><table style="width:100%;text-align:left"><thead><tr><th>Quelle</th><th>Status</th></tr></thead><tbody>${data.sources.map(s=>`<tr><td>${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)} ↗</a>`:esc(s.name)}</td><td>Vorgemerkt · ${s.url?'Adresse hinterlegt':'Adresse fehlt'} · Anmeldung ungeprüft</td></tr>`).join('')}</tbody></table><h3>Heruntergeladenen Beleg importieren</h3><p>PDF oder Bild in den Sammelordner übernehmen. Der Import bestätigt noch keine Firma oder Zuordnung und startet keinen Prüflauf.</p><form id="fibuImportForm"><label>Quelle<select name="source">${data.sources.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label><label>Datei<input name="file" type="file" accept=".pdf,.png,.jpg,.jpeg" required></label><p id="fibuImportStatus" role="status"></p><button class="primary">Beleg importieren</button></form>`);
         const f=$('#fibuImportForm');f.onsubmit=async e=>{e.preventDefault();const b=f.querySelector('button');b.disabled=true;try{const file=f.file.files[0];if(!file||file.size>25*1024*1024)throw Error('Datei bis 25 MB wählen.');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Datei nicht lesbar.'));reader.readAsDataURL(file);});await fibuApi('/imports/'+company,{source:f.source.value,name:file.name,data});$('#fibuImportStatus').textContent='Beleg gespeichert. Beim nächsten ausdrücklichen Prüflauf werden Firma und Zuordnung geprüft.';f.file.value='';}catch(e){$('#fibuImportStatus').textContent=e.message;}finally{b.disabled=false;}};return;
       }
       if(action==='connect'){
@@ -62,7 +73,7 @@ async function viewFibuHome(company){
       if(action==='new'){edit(null);return;}
       if(action==='edit'){edit(m);return;}
       if(action==='open'){if(latest(month))viewFibu(company,month);else edit(m);return;}
-      if(action==='folder'){modal(`<h2>FiBu-Ordner</h2><div class="f-path">${esc(m.monthFolderPath)}</div><p>Der Ordner liegt auf dem verbundenen Rechner. Ein hinterlegter OneDrive-Weblink öffnet ihn im Browser.</p>${m.folderUrl?`<a class="f-link" href="${esc(m.folderUrl)}" target="_blank" rel="noopener">Ordner öffnen ↗</a>`:button('edit','Ordnerlink hinterlegen')}`);return;}
+      if(action==='folder'&&state.mode==='cloud'){await browse(m.monthFolderPath);return;}if(action==='folder'){modal(`<h2>FiBu-Ordner</h2><div class="f-path">${esc(m.monthFolderPath)}</div><p>Der Ordner liegt auf dem verbundenen Rechner. Ein hinterlegter OneDrive-Weblink öffnet ihn im Browser.</p>${m.folderUrl?`<a class="f-link" href="${esc(m.folderUrl)}" target="_blank" rel="noopener">Ordner öffnen ↗</a>`:button('edit','Ordnerlink hinterlegen')}`);return;}
       if(action==='start'){
         if(!m.bankPdfPath){edit(m);return;}
         modal(`<h2>Astra FIBU starten</h2><p>Du beauftragst die Prüfung dieser Firma und dieses Monats. Der Originalauszug bleibt erhalten.</p><div class="f-path"><b>${esc(CO[company].n)} · ${name(month)}</b><p>Belegordner: ${esc(m.monthFolderPath)}</p><p>Kontoauszug: ${esc(m.bankPdfPath)}</p></div><p>Belege sammeln, mit Bankbuchungen abgleichen und eine markierte Kopie speichern. Unklare Zuordnungen bleiben offen.</p><div id="fibuModalError" class="f-error" role="alert"></div><div class="f-dialogfoot">${button('closeModal','Abbrechen')}${button('confirmStart','▶ Prüfung starten',true)}</div>`);return;

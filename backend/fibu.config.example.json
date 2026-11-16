@@ -1,5 +1,5 @@
 {
-  "mode": "local",
+  "mode": "cloud",
   "microsoft": {
     "tenantId": "TENANT-ID-EINTRAGEN",
     "clientId": "APP-CLIENT-ID-EINTRAGEN"
@@ -10,8 +10,13 @@
       "pilotMode": true,
       "ocrEnabled": true,
       "portalUrls": {},
-      "root": "C:/PFAD/ZUR/SYNCHRONISIERTEN/FIRMENWURZEL",
-      "collectionFolder": "01. Buchhaltung/00. FiBu [TestConsulting CC GmbH]/01.Automatisierte Buchhaltung_ASTRA",
+      "cloud": {
+        "rootPath": "FIRMENORDNER-IN-ONEDRIVE",
+        "monthBasePath": "01. Buchhaltung/00. FiBu [TestConsulting CC GmbH]",
+        "collectionPath": "01. Buchhaltung/00. FiBu [TestConsulting CC GmbH]/01.Automatisierte Buchhaltung_ASTRA"
+      },
+      "root": "/app/backend/data/fibu-cloud/tc",
+      "collectionFolder": "collection",
       "accountHolder": "TestConsulting CC GmbH",
       "documentCompanyName": "TestConsulting CC GmbH",
       "iban": "VERIFIZIERTE-IBAN-EINTRAGEN",

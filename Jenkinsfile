@@ -33,7 +33,7 @@ docker run --rm --network none --entrypoint node "$image" --test
     }
     stage('Private FIBU-Konfiguration') {
       steps {
-        withCredentials([string(credentialsId: 'astra-fibu-tc-bootstrap', variable: 'ASTRA_FIBU_BOOTSTRAP')]) {
+        withCredentials([string(credentialsId: 'astra-fibu-cloud-bootstrap', variable: 'ASTRA_FIBU_BOOTSTRAP')]) {
           sh '''set +x
 set -eu
 cd /var/www/ceremesiz-app

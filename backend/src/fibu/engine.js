@@ -3,7 +3,14 @@ const path=require('node:path');
 const {hash,inside,fail,monthFromFolder,classify,match,allocations,astraName,writeVerified}=require('./core');
 const pdf=require('./pdf');
 function engine({store,config,ms}) {
-  const running=new Set();
+  const running=new Set(),extractions=new Map();
+  function extractReceipt(bytes,isPdf,c){
+    const key=hash(bytes)+':'+(c.ocrEnabled===true);
+    if(extractions.has(key)){const value=extractions.get(key);extractions.delete(key);extractions.set(key,value);return value;}
+    const value=pdf.extractReceipt(bytes,isPdf,{ocr:c.ocrEnabled===true});extractions.set(key,value);
+    if(extractions.size>128)extractions.delete(extractions.keys().next().value);
+    return value;
+  }
   async function validate(c,body) {
     const month=monthFromFolder(body.monthFolderPath);
     if(body.month&&body.month!==month) fail('Monat stimmt nicht mit dem Ordner überein.',400);
@@ -23,7 +30,7 @@ function engine({store,config,ms}) {
     const bytes=await fs.readFile(file),digest=hash(bytes),name=path.basename(file);
     const isPdf=/\.pdf$/i.test(file);
     if(!isPdf&&!c.ocrEnabled) return {id:digest,path:file,name,hash:digest,verified:false,amounts:[],text:'',reason:'Foto-/Bildbeleg: OCR/manuelle Prüfung erforderlich',...source};
-    const extracted=await pdf.extractReceipt(bytes,isPdf,{ocr:c.ocrEnabled===true});
+    const extracted=await extractReceipt(bytes,isPdf,c);
     return {id:digest,path:file,name,hash:digest,...pdf.receiptMetadata(extracted,c),...(extracted.ocr?{ocr:extracted.ocr,requiresReview:true,reason:'OCR-Vorschlag: Firma, Betrag und Referenz am Original bestätigen'}:{}),...source};
   }
   async function importMail(job,c,collection) {
@@ -55,7 +62,7 @@ function engine({store,config,ms}) {
           const isPdf=/\.pdf$/i.test(a.name);
           if(!isPdf&&!c.ocrEnabled)fail('Bildanhang benötigt OCR/manuelle Firmenprüfung; Nachricht bleibt offen.');
           if(isPdf&&bytes.subarray(0,5).toString()!=='%PDF-') fail('PDF-Signatur ungültig.');
-          const extracted=await pdf.extractReceipt(bytes,isPdf,{ocr:c.ocrEnabled===true});
+          const extracted=await extractReceipt(bytes,isPdf,c);
           const meta=pdf.receiptMetadata(extracted,c);
           if(!meta.verified) fail('Firma im Anhang nicht eindeutig verifiziert; keine automatische Ablage.');
           const safe=s=>s.replace(/[^a-zA-Z0-9ÄÖÜäöüß.,_-]/g,'_').slice(0,70);
@@ -93,7 +100,7 @@ function engine({store,config,ms}) {
     job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
     job.events.push({at:job.lastSuccessfulCheck,message:'Markierte PDF gespeichert und Text/Seitenzahl verifiziert; Ergebnis: '+job.state});
     job.reportPath=await writeVerified(folder,`ASTRA_Pruefbericht_${job.month}_${job.id}.json`,Buffer.from(JSON.stringify({...job,documents:job.documents.map(({text,...d})=>d)},null,2)));
-    store.putMonth(job.owner,job.companyId,job.month,{bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id});
+    store.putMonth(job.owner,job.companyId,job.month,{execution:job.execution||'local',bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id});
   }
   async function verifyDocument(job,d,body,c){
     const file=await inside(c.root,d.path);if(hash(await fs.readFile(file))!==d.hash)fail('Beleg wurde seit der Prüfung verändert.',409);
@@ -110,7 +117,7 @@ function engine({store,config,ms}) {
       const checked=await validate(c,job);
       if(checked.bankHash!==job.bankHash)fail('Bankdatei wurde nach Auftrag geändert.');
       job.transactions=checked.transactions;job.controls=checked.controls||null;job.issues.push(...checked.issues);
-      const previous=store.month(owner,job.companyId,job.month);
+      const storedPrevious=store.month(owner,job.companyId,job.month),previous=job.execution==='server'&&storedPrevious?.execution!=='server'?null:storedPrevious;
       if(previous&&previous.bankHash!==job.bankHash)job.issues.push('Neue Bankrevision: frühere Zuordnungen bleiben in der Historie, Koordinaten müssen neu geprüft werden.');
       const collection=await inside(c.root,c.collectionFolder,'directory');
       event(job,'Bankkonto und Auszugszeitraum geprüft.');

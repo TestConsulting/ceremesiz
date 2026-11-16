@@ -4,8 +4,9 @@ const names={tc:'TestConsulting CC GmbH',immo:'AC Immo Invest GmbH',holding:'Cer
 function loadConfig() {
   if(!process.env.FIBU_CONFIG_PATH) return {companies:{},mode:'disabled'};
   const c=JSON.parse(fs.readFileSync(process.env.FIBU_CONFIG_PATH,'utf8'));
-  if(!['local','remote'].includes(c.mode)) fail('Lokalen oder gekoppelten Ausführungsmodus konfigurieren.',503);
+  if(!['local','remote','cloud'].includes(c.mode)) fail('Lokalen, gekoppelten oder serverseitigen Ausführungsmodus konfigurieren.',503);
   for(const [id,v] of Object.entries(c.companies||{})) {
+    if(c.mode==='cloud'&&v.enabled&&(id==='tc'||v.pilotAccepted===true))require('./onedrive').cleanPath(v.cloud?.rootPath);
     if(v.ocrEnabled!==undefined&&typeof v.ocrEnabled!=='boolean')fail('OCR-Freischaltung muss true oder false sein: '+id,503);
     if(v.pilotMode!==undefined&&typeof v.pilotMode!=='boolean')fail('Pilotmodus muss true oder false sein: '+id,503);
     if(!names[id] || !v.root || !v.collectionFolder || !v.accountHolder || !v.iban || !v.documentCompanyName || !Array.isArray(v.allowedUsers)) fail('Unvollständige Firmenkonfiguration: '+id,503);
