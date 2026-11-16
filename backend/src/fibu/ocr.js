@@ -7,7 +7,7 @@ function modelFolder(){
  if(!models)models=(async()=>{const folder=await fs.mkdtemp(path.join(require('node:os').tmpdir(),'astra-ocr-models-'));for(const lang of ['deu','eng'])await fs.copyFile(path.join(require('@tesseract.js-data/'+lang).langPath,lang+'.traineddata.gz'),path.join(folder,lang+'.traineddata.gz'));return folder;})();
  return models;
 }
-function recognize(bytes,isPdf){
+function recognize(bytes,isPdf,{header=false}={}){
  if(bytes.length>25*1024*1024)fail('OCR-Datei über 25 MB.');
  // One OCR process at a time, with a hard timeout even for damaged documents.
  const run=async()=>{const folder=await modelFolder();return new Promise((resolve,reject)=>{
@@ -17,7 +17,7 @@ function recognize(bytes,isPdf){
   const timer=setTimeout(()=>finish(Error('OCR-Zeitlimit erreicht; manuell prüfen.')),120000);
   child.once('message',result=>finish(result.ok?null:Error(result.error),result));
   child.once('error',e=>finish(e));child.once('exit',()=>finish(Error('OCR-Prozess beendet; Beleg manuell prüfen.')));
-  child.send({data:bytes.toString('base64'),pdf:isPdf,modelFolder:folder});
+  child.send({data:bytes.toString('base64'),pdf:isPdf,header,modelFolder:folder});
  });};
  const result=tail.then(run);tail=result.catch(()=>{});return result;
 }

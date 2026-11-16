@@ -11,12 +11,12 @@ process.once('message',async message=>{
    const doc=await task.promise;
    try{
     if(doc.numPages>10)throw Error('OCR auf zehn Seiten pro Beleg begrenzt.');
-    for(let n=1;n<=doc.numPages;n++){
-     const page=await doc.getPage(n),v=page.getViewport({scale:2});
+    for(let n=1;n<=(message.header?1:doc.numPages);n++){
+     const page=await doc.getPage(n),v=page.getViewport({scale:message.header?3:2});
      if(v.width*v.height>16000000)throw Error('OCR-Seite zu groß.');
      const canvas=createCanvas(Math.ceil(v.width),Math.ceil(v.height));
      await page.render({canvasContext:canvas.getContext('2d'),viewport:v}).promise;
-     images.push(canvas.toBuffer('image/png'));
+     if(message.header){const header=createCanvas(canvas.width,Math.ceil(canvas.height*.38));header.getContext('2d').drawImage(canvas,0,0);images.push(header.toBuffer('image/png'));}else images.push(canvas.toBuffer('image/png'));
     }
    }finally{await task.destroy();}
   }else{

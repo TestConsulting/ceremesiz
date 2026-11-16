@@ -38,9 +38,9 @@ function engine({store,config,ms}) {
     if(!ms.connected(job.owner,job.companyId)) {job.issues.push('E-Post nicht verbunden; nur lokale Bestandsbelege geprüft.');return;}
     const mailbox=c.mailbox||'epost@testconsulting.de';
     const messages=await ms.list(job.owner,job.companyId,mailbox);
-    if(ms.search)for(const t of job.transactions.filter(t=>/^hays(?:\s+ag)?$/i.test(t.counterparty))) {
-      const refs=(t.description.match(/\b[A-Z0-9-]{5,80}\b/gi)||[]).filter(r=>/\d/.test(r));
-      for(const ref of refs)try{messages.push(...await ms.search(job.owner,job.companyId,mailbox,ref));}catch(e){job.issues.push('Historische Hays-Suche: '+e.message);}
+    if(ms.search)for(const ref of require('./mail-references').mailReferences(job.transactions)) {
+      checkpoint(job);
+      try{messages.push(...await ms.search(job.owner,job.companyId,mailbox,ref));}catch(e){job.issues.push('Historische Belegsuche: '+e.message);}
     }
     const uniqueMessages=[...new Map(messages.map(m=>[m.id,m])).values()];let mailDone=0;
     for(const message of uniqueMessages) {

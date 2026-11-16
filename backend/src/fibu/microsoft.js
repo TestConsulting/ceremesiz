@@ -80,7 +80,7 @@ function microsoft(config,{vault=null}={}) {
       return result;
     },
     async search(o,c,mailbox,reference) {
-      if(typeof reference!=='string'||! /^[A-Z0-9-]{5,80}$/i.test(reference))fail('Ungültige historische Belegreferenz.',400);
+      if(typeof reference!=='string'||! /^[A-Z0-9][A-Z0-9/.-]{4,79}$/i.test(reference))fail('Ungültige historische Belegreferenz.',400);
       const page=await graph(o,c,`users/${encodeURIComponent(mailbox)}/messages?$search=${encodeURIComponent('"'+reference+'"')}&$select=id,subject,categories,flag&$top=100`);
       if(page['@odata.nextLink'])fail('Historische Suche ist nicht eindeutig genug. Referenz eingrenzen.');
       return page.value;

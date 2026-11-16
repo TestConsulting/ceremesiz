@@ -56,8 +56,8 @@ function receiptMetadata(extracted, config) {
   const companies = ['TestConsulting CC GmbH', 'AC Immo Invest GmbH', 'Ceremesiz Holding'];
   const found = companies.filter(c => norm(text).includes(norm(c)));
   const verified = found.length === 1 && norm(found[0]) === norm(config.documentCompanyName);
-  const totals = [...text.matchAll(/(?:Gesamtbetrag(?:[ \t]+brutto)?|Bruttobetrag|Rechnungsbetrag(?:[ \t]*\(Brutto\))?|Gesamtsumme|Zu zahlender Betrag|Total)[ \t]*:?[ \t]*(?:(EUR|€)[ \t]*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})[ \t]*(EUR|€|USD|GBP)?/ig)]
-    .filter(m=>(m[1]||/^(EUR|€)$/i.test(m[3]||''))&&!/USD|GBP/i.test(m[3]||'')).map(m=>money(m[2]));
+  const totals = [...text.matchAll(/(?:Gesamtbetrag(?:[ \t]+brutto|[ \t]*\(in[ \t]+EUR\))?|Bruttobetrag|Rechnungsbetrag(?:[ \t]*\(Brutto\))?|Gesamtsumme|Zu zahlender Betrag|Total)[ \t]*:?[ \t]*(?:(EUR|€)[ \t]*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})[ \t]*(EUR|€|USD|GBP)?/ig)]
+    .filter(m=>(m[1]||/\(in[ \t]+EUR\)/i.test(m[0])||/^(EUR|€)$/i.test(m[3]||''))&&!/USD|GBP/i.test(m[3]||'')).map(m=>money(m[2]));
   const microsoftInvoice=/Microsoft Ireland Operations Ltd/.test(text)&&/Rechnungsnummer\s*:/i.test(text);
   // Microsoft's German invoice separates the EUR header amount from "Summe:".
   // Accept only when the explicitly labelled sum equals a standalone EUR amount.
@@ -90,6 +90,7 @@ async function extractReceipt(bytes,isPdf=true,{ocr=false}={}) {
   const extracted=isPdf?await extract(bytes):{text:'',pages:[]};
   if(ocr&&(!isPdf||extracted.text.replace(/\s/g,'').length<40||extracted.pages[0]?.lines.map(l=>l.text).join('').replace(/\s/g,'').length<40)) {
     const recognized=await require('./ocr').recognize(bytes,isPdf);
+    if(isPdf&&/Aufwendungsausgleichsgesetz|Erstattung nach.*AAG/i.test(recognized.text))recognized.header=await require('./ocr').recognize(bytes,true,{header:true});
     return {...extracted,text:recognized.text,ocr:recognized};
   }
   return extracted;
