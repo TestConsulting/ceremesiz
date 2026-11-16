@@ -1,7 +1,7 @@
 const crypto=require('node:crypto');
 const {fail}=require('./core');
 function cleanPath(value,{empty=false}={}){
- if(typeof value!=='string'||value.length>2000||/[\\\x00-\x1f]/.test(value))fail('Ungültiger OneDrive-Pfad.',400);
+ if(typeof value!=='string'||value.length>2000||/[\\:\x00-\x1f]/.test(value))fail('Ungültiger OneDrive-Pfad.',400);
  const parts=value.split('/');if(parts.some(p=>p==='.'||p==='..'||(!p&&value!=='')))fail('OneDrive-Pfad außerhalb des Firmenordners.',400);
  if(!value&&!empty)fail('OneDrive-Pfad fehlt.',400);return value;
 }
@@ -11,6 +11,12 @@ function oneDrive({graph,config}){
   return 'me/drive/root:/'+(root+(rel?'/'+rel:'')).split('/').map(encodeURIComponent).join('/');
  };
  return {
+  async folder(owner,company,relative=''){
+   const item=await graph(owner,company,route(company,relative));
+   if(!item.folder||item.remoteItem)fail('OneDrive-Ordner nicht verfügbar.',400);
+   let webUrl;try{const u=new URL(item.webUrl);if(u.protocol==='https:'&&!u.username&&!u.password&&u.hostname.endsWith('.sharepoint.com'))webUrl=u.href;}catch{}
+   return {webUrl:webUrl||null};
+  },
   async list(owner,company,relative=''){
    let next=route(company,relative)+':/children?$top=200',files=[];
    for(let n=0;next&&n<5;n++){const page=await graph(owner,company,next);files.push(...page.value);next=page['@odata.nextLink'];}

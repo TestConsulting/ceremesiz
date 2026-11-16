@@ -14,12 +14,14 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  const api=(url,body)=>fetch(base+'/api/fibu'+url,{headers:{Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':auth.csrfToken},...(body?{method:'POST',body:JSON.stringify(body)}:{})});
  assert.equal((await fetch(base+'/api/fibu/onedrive/tc')).status,401);assert.equal((await api('/onedrive/tc?path=../Other')).status,400);assert.equal((await api('/onedrive/immo')).status,403);
  assert.equal((await(await api('/onedrive/tc?path=Fibu/2026/10')).json()).entries.length,2);
- const params={companyId:'tc',monthFolderPath:'Fibu/2026/10',bankPdfPath:'Bank.pdf'};
+ const params={companyId:'tc',month:'2026-10',monthFolderPath:'Belege/Oktober',bankPdfPath:'Bankarchiv/2026/10/Bank.pdf',bankDrivePath:true};
  assert.equal((await api('/months',params)).status,200);assert.equal((await(await api('/months?companyId=tc')).json()).months[0].storageMode,'cloud');
  assert.equal((await api('/jobs',{...params,bankPdfPath:'C:/Windows/private.pdf'})).status,400);
+ assert.equal((await api('/months',{...params,bankPdfPath:'../Other/Bank.pdf'})).status,400);
  const started=await api('/jobs',params);assert.equal(started.status,202);const job=await started.json();let result;
  const until=Date.now()+15000;while(Date.now()<until){result=await(await api('/jobs/'+job.id)).json();if(!['queued','running'].includes(result.state))break;await new Promise(r=>setTimeout(r,100));}
- assert.equal(result.execution,'server');assert.equal(result.state,'completed');assert.equal(result.transactions[0].status,'matched');assert.ok(result.markedPdfPath);assert.equal(result.sourceMonthPath,'Fibu/2026/10');
+ assert.equal(result.execution,'server');assert.equal(result.state,'completed');assert.equal(result.transactions[0].status,'matched');assert.ok(result.markedPdfPath);assert.equal(result.sourceMonthPath,'Belege/Oktober');
  const original=Buffer.from(await(await api('/jobs/'+job.id+'/files/original')).arrayBuffer());assert.deepEqual(original,bank);
+ assert.ok(result.cloudSources.some(s=>s.path==='Bankarchiv/2026/10/Bank.pdf'));
  assert.equal((await api('/jobs/'+job.id+'/month',{action:'close'})).status,409);
 });

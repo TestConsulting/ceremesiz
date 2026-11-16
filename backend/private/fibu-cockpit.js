@@ -1,7 +1,7 @@
 /* Month overview follows the supplied Astra cockpit reference. */
 async function viewFibuHome(company){
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
-  let state,c,jobs=[],months=[],contextMonth=null,browsePath='';
+  let state,c,jobs=[],months=[],contextMonth=null,browsePath='',pickerMode='new',pickerMonth=null,selectedBank='',driveEntries=[],browseGeneration=0;
   const alive=()=>generation===fibuGeneration&&curRoute==='fibu-'+company;
   const name=month=>month.slice(5)+'/'+month.slice(0,4);
   const latest=month=>jobs.find(j=>j.month===month);
@@ -23,7 +23,7 @@ async function viewFibuHome(company){
         const success=jobs.find(j=>j.month===m.month&&j.lastSuccessfulCheck),active=['queued','running'].includes(j?.state);
         return `<article class="f-month" data-month="${m.month}"><div>${button('open','FiBu '+name(m.month),false,'class="f-month-name"')} ${state.demo?'<span class="f-badge">Beispiel</span>':''}<small>${esc(m.monthFolderPath)}</small></div><div><div class="f-count ${done?'done':''}">${tx.length?matched+'/'+tx.length+' zugeordnet'+(done?' ✓':''):'Noch nicht geprüft'}</div><small>Dokumente zuletzt geprüft: ${success?fibuTime(success.lastSuccessfulCheck):'Noch nicht geprüft'}</small><div class="f-bar ${done?'done':''}"><i style="width:${tx.length?matched/tx.length*100:0}%"></i></div></div>
           <div class="f-actions">${j?`<a class="f-link" href="/api/fibu/jobs/${j.id}/files/${j.markedPdfPath?'marked':'original'}" target="_blank" rel="noopener">▤ PDF</a>`:button('open','▤ PDF')}${button('folder','Ordner ↗')}${button('edit','FiBu-Pfad')}</div>
-          <div class="f-agent"><div class="f-source"><span>KONTOAUSZUG · QUELLE FÜR ASTRA</span><p>${esc(m.bankPdfPath||'Noch kein Kontoauszug hinterlegt')}</p>${j?`<small>${esc(fibuLabel(j.state))} · Letzter Versuch: ${fibuTime(j.created)}</small>`:''}</div><div class="f-agent-actions">${button('edit','Kontoauszug-Pfad')}<span class="f-connection ${c.connected?'ok':''}">● ${c.connected?'E-Post verbunden':'E-Post nicht verbunden'}</span>${button('start',active?'◷ Prüfung läuft':'▶ Prüfung starten',true,active?'disabled':'')}</div></div></article>`;
+          <div class="f-agent"><div class="f-source"><span>KONTOAUSZUG · QUELLE FÜR ASTRA</span><p>${esc(m.bankPdfPath||'Noch kein Kontoauszug hinterlegt')}</p>${j?`<small>${esc(fibuLabel(j.state))} · Letzter Versuch: ${fibuTime(j.created)}</small>`:''}</div><div class="f-agent-actions">${button('bank','Kontoauszug-Pfad')}<span class="f-connection ${c.connected?'ok':''}">● ${c.connected?'E-Post verbunden':'E-Post nicht verbunden'}</span>${button('start',active?'◷ Prüfung läuft':'▶ Prüfung starten',true,active?'disabled':'')}</div></div></article>`;
       }).join('')||'<div class="f-empty">Noch kein FiBu-Monat angelegt. Hinterlege zuerst den Monatsordner und die konkrete Bank-PDF.</div>'}</div>
       <p class="f-hint">FiBu-Pfad = Belegordner · Kontoauszug-Pfad = konkrete Bank-PDF · ▶ = ausdrücklicher Startauftrag für Astra.</p><p class="f-hint">Änderungen an Monaten und Zuordnungen werden privat gespeichert. Ein beendeter Prüflauf ist noch kein Monatsabschluss.</p><dialog id="fibuHomeModal"></dialog></div>`;
     $('#main .fibu-cockpit').onclick=click;
@@ -31,24 +31,59 @@ async function viewFibuHome(company){
   async function refresh(){
     if(document.getElementById('fibuHomeModal')?.open){clearTimeout(fibuTimer);fibuTimer=setTimeout(()=>refresh().catch(error),1500);return;}
     const [j,m]=await Promise.all([fibuApi('/jobs?companyId='+company),fibuApi('/months?companyId='+company)]);if(!alive())return;jobs=j.jobs;
-    const map=new Map(m.months.map(m=>[m.month,m]));for(const j of jobs)if(!map.has(j.month))map.set(j.month,{companyId:company,month:j.month,monthFolderPath:j.sourceMonthPath||j.monthFolderPath,bankPdfPath:j.sourceBankName||j.bankPdfPath,folderUrl:''});
+    const map=new Map(m.months.map(m=>[m.month,m]));for(const j of jobs)if(!map.has(j.month))map.set(j.month,{companyId:company,month:j.month,monthFolderPath:j.sourceMonthPath||j.monthFolderPath,bankPdfPath:j.sourceBankName||j.bankPdfPath,bankDrivePath:j.sourceBankIsDrivePath===true,folderUrl:''});
     months=[...map.values()].sort((a,b)=>b.month.localeCompare(a.month));render();clearTimeout(fibuTimer);if(jobs.some(j=>['queued','running'].includes(j.state)))fibuTimer=setTimeout(()=>refresh().catch(error),1500);
   }
   function edit(m){
-    if(state.mode==='cloud'){browse(m?.monthFolderPath||c.cloudMonthBase||'').catch(error);return;}
+    if(state.mode==='cloud'){openPicker(m?'folder':'new',m);return;}
     modal(`<h2>${m?'FiBu-Pfade ändern':'FiBu-Monat anlegen'}</h2><p>${esc(CO[company].n)} · Der Prüfmonat wird aus dem Monatsordner abgeleitet.</p><form id="fibuMonthForm"><label>FiBu-Ordnerpfad<input name="folder" required maxlength="2000" value="${esc(m?.monthFolderPath||'')}" placeholder="…\\2026\\10"></label><label>Konkrete Original-Bank-PDF<input name="bank" maxlength="2000" value="${esc(m?.bankPdfPath||'')}" placeholder="Vollständiger Dateipfad"></label><label>OneDrive-Ordnerlink (optional)<input name="url" type="url" value="${esc(m?.folderUrl||'')}" placeholder="https://…"></label><p>Abgeleiteter Prüfmonat: <strong id="fibuDerivedMonth">${m?name(m.month):'Noch nicht erkannt'}</strong></p><div id="fibuModalError" class="f-error" role="alert"></div><div class="f-dialogfoot"><button type="submit" class="primary">Monat speichern</button></div></form>`);
     const f=$('#fibuMonthForm');f.folder.oninput=()=>{const month=fibuMonth(f.folder.value);$('#fibuDerivedMonth').textContent=/^20\d{2}-\d{2}$/.test(month)?name(month):'Noch nicht erkannt';};
     f.onsubmit=async e=>{e.preventDefault();try{await fibuApi('/months',{companyId:company,monthFolderPath:f.folder.value,bankPdfPath:f.bank.value,folderUrl:f.url.value});$('#fibuHomeModal').close();await refresh();toast('FiBu-Monat gespeichert');}catch(e){$('#fibuModalError').textContent=e.message;}};
   }
+  function openPicker(mode,m){
+    pickerMode=mode;pickerMonth=m||null;selectedBank=m?.bankPdfPath||'';
+    let initial=m?.monthFolderPath||c.cloudMonthBase||'';
+    if(mode==='bank'&&(selectedBank.includes('/')||m?.bankDrivePath))initial=selectedBank.split('/').slice(0,-1).join('/');
+    browse(initial).catch(error);
+  }
   async function browse(relative){
-    const data=await fibuApi('/onedrive/'+company+'?path='+encodeURIComponent(relative));browsePath=data.path;
-    const month=fibuMonth(browsePath),valid=/^20\d{2}-\d{2}$/.test(month);
-    modal(`<h2>OneDrive-Monatsordner wählen</h2><p>${esc(browsePath||'Firmenordner')}</p>${browsePath?button('driveUp','↑ Übergeordneter Ordner'):''}<div>${data.entries.filter(d=>d.folder).map(d=>button('driveFolder',esc(d.name),false,'data-path="'+esc((browsePath?browsePath+'/':'')+d.name)+'"')).join(' ')}</div><form id="fibuCloudMonth"><p>Prüfmonat: ${valid?esc(name(month)):'Bitte Jahr/Monat öffnen'}</p><label>Original-Kontoauszug<select name="bank" required><option value="">PDF auswählen</option>${data.entries.filter(d=>d.file&&/\.pdf$/i.test(d.name)&&!/_Astra(?:_|\.)/i.test(d.name)).map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}</select></label><p id="fibuCloudError" class="f-error" role="alert"></p><button class="primary" ${valid?'':'disabled'}>Monat speichern</button></form>`);
-    const f=$('#fibuCloudMonth');f.onsubmit=async e=>{e.preventDefault();try{await fibuApi('/months',{companyId:company,monthFolderPath:browsePath,bankPdfPath:f.bank.value});$('#fibuHomeModal').close();await refresh();toast('OneDrive-Monat gespeichert');}catch(e){$('#fibuCloudError').textContent=e.message;}};
+    const request=++browseGeneration;
+    modal('<h2>OneDrive öffnen</h2><p role="status">Ordner wird geladen …</p>');
+    try{
+      const data=await fibuApi('/onedrive/'+company+'?path='+encodeURIComponent(relative));
+      if(request!==browseGeneration||!alive()||!$('#fibuHomeModal')?.open)return;
+      browsePath=data.path;driveEntries=data.entries;
+      const month=fibuMonth(browsePath),valid=/^20\d{2}-\d{2}$/.test(month),parts=browsePath.split('/').filter(Boolean);
+      const title=pickerMode==='bank'?'Kontoauszug aus OneDrive auswählen':pickerMode==='view'?'OneDrive-Ordner':pickerMode==='folder'?'FiBu-Ordner aus OneDrive auswählen':'FiBu-Monat aus OneDrive anlegen';
+      const full=n=>(browsePath?browsePath+'/':'')+n;
+      const chosen=n=>selectedBank===full(n)||(!pickerMonth?.bankDrivePath&&!selectedBank.includes('/')&&pickerMonth?.monthFolderPath===browsePath&&selectedBank===n);
+      const entries=[...driveEntries].sort((a,b)=>Number(!!b.folder)-Number(!!a.folder)||a.name.localeCompare(b.name,'de',{numeric:true}));
+      const allowFiles=pickerMode==='bank'||pickerMode==='new';
+      modal('<h2>'+title+'</h2><p>'+(pickerMode==='folder'?'Belegordner wählen. Der Kontoauszug bleibt separat hinterlegt.':pickerMode==='bank'?'Original-PDF wählen. Der FiBu-Ordner bleibt erhalten.':'Ordner öffnen und die gewünschte Quelle auswählen.')+'</p><nav class="f-drive-crumbs" aria-label="OneDrive-Pfad">'+button('driveFolder','OneDrive',false,'data-path=""')+parts.map((part,i)=>'<span>/</span>'+button('driveFolder',esc(part),false,'data-path="'+esc(parts.slice(0,i+1).join('/'))+'"')).join('')+'</nav><div class="f-drive-tools">'+button('driveUp','↑ Übergeordneter Ordner',false,browsePath?'':'disabled')+'<label>Suchen<input id="fibuDriveSearch" type="search" placeholder="In diesem Ordner suchen"></label></div><div class="f-drive-list" aria-label="Dateien und Ordner">'+entries.map(d=>{
+        const pdf=d.file&&/\.pdf$/i.test(d.name)&&!/_Astra(?:_|\.)/i.test(d.name);
+        return '<div class="f-drive-row" data-drive-name="'+esc(d.name.toLocaleLowerCase('de'))+'">'+(d.folder?button('driveFolder','<span aria-hidden="true">▸</span><span>'+esc(d.name)+'</span><small>Ordner öffnen</small>',false,'data-path="'+esc(full(d.name))+'"'):allowFiles&&pdf?button('driveFile','<span aria-hidden="true">▤</span><span>'+esc(d.name)+'</span><small>PDF · '+Math.max(1,Math.round((d.size||0)/1024))+' KB</small>',false,'data-path="'+esc(full(d.name))+'" aria-pressed="'+chosen(d.name)+'"'):'<span class="f-drive-unavailable">'+esc(d.name)+'<small>'+ (d.file?'Datei':'Nicht auswählbar')+'</small></span>')+'</div>';
+      }).join('')+(entries.length?'':'<p>Dieser Ordner ist leer.</p>')+'<p id="fibuDriveNoResults" hidden>Keine passenden Einträge.</p></div><div class="f-path"><strong>Auswahl</strong><p>'+(pickerMode==='bank'?'PDF: '+esc(selectedBank||'Noch keine PDF gewählt'):'Ordner: '+esc(browsePath||'OneDrive-Firmenordner'))+'</p>'+(pickerMode==='new'?'<p>PDF: '+esc(selectedBank||'Noch keine PDF gewählt')+'</p>':'')+'</div><p id="fibuCloudError" class="f-error" role="alert"></p><div class="f-dialogfoot">'+button('closeModal','Abbrechen')+(data.webUrl?'<a class="f-link" href="'+esc(data.webUrl)+'" target="_blank" rel="noopener">In OneDrive öffnen ↗</a>':'')+(pickerMode==='view'?'':button('driveSave',pickerMode==='bank'?'Kontoauszug übernehmen':pickerMode==='folder'?'Diesen FiBu-Ordner übernehmen':'Monat speichern',true,(pickerMode==='bank'?!!selectedBank:pickerMode==='folder'?true:valid&&!!selectedBank)?'':'disabled'))+'</div>');
+      $('#fibuDriveSearch').oninput=e=>{let visible=0;document.querySelectorAll('[data-drive-name]').forEach(row=>{row.hidden=!row.dataset.driveName.includes(e.target.value.toLocaleLowerCase('de'));if(!row.hidden)visible++;});$('#fibuDriveNoResults').hidden=!!visible;};
+    }catch(e){if(request===browseGeneration&&alive()&&$('#fibuHomeModal')?.open)modal('<h2>OneDrive nicht verfügbar</h2><p class="f-error">'+esc(e.message)+'</p>'+button('driveFolder','Erneut versuchen',false,'data-path="'+esc(relative)+'"'));}
+  }
+  async function saveDrive(b){
+    b.disabled=true;
+    try{
+      const folder=pickerMode==='bank'?pickerMonth.monthFolderPath:browsePath;
+      let bank=pickerMode==='folder'?pickerMonth.bankPdfPath:selectedBank;
+      if(pickerMode==='folder'&&!pickerMonth.bankDrivePath&&bank&&!bank.includes('/'))bank=pickerMonth.monthFolderPath+'/'+bank;
+      if(!bank)throw Error('Bitte zuerst den Kontoauszug auswählen.');
+      await fibuApi('/months',{companyId:company,month:pickerMonth?.month||fibuMonth(folder),monthFolderPath:folder,bankPdfPath:bank,bankDrivePath:true});
+      $('#fibuHomeModal').close();await refresh();toast('OneDrive-Auswahl gespeichert');
+    }catch(e){$('#fibuCloudError').textContent=e.message;b.disabled=false;}
   }
   async function click(e){
     const b=e.target.closest('[data-fibu]');if(!b)return;const action=b.dataset.fibu,month=b.closest('[data-month]')?.dataset.month||contextMonth,m=months.find(m=>m.month===month);contextMonth=month;
     try{
+      if(action==='driveFile'){selectedBank=b.dataset.path;await browse(browsePath);return;}
+      if(action==='driveSave'){await saveDrive(b);return;}
+      if(action==='bank'&&state.mode==='cloud'){openPicker('bank',m);return;}
+      if(action==='bank'){edit(m);return;}
       if(action==='driveFolder'){await browse(b.dataset.path);return;}
       if(action==='driveUp'){await browse(browsePath.split('/').slice(0,-1).join('/'));return;}
       if(action==='sources'){
@@ -69,16 +104,16 @@ async function viewFibuHome(company){
         b.disabled=true;try{const result=await fibuApi('/microsoft/'+company+'/probe',{});modal(`<h2>Postfachzugriff bestätigt</h2><p>Angemeldet als ${esc(result.user.email)}.</p><div class="f-path"><strong>${esc(result.mailbox)}</strong><p>Posteingang erreichbar · ${esc(result.inbox.itemCount)} Nachrichten</p></div><p>Geprüft: ${fibuTime(result.checkedAt)}. Es wurden keine Nachrichten oder Kategorien verändert.</p>`);}finally{b.disabled=false;}return;
       }
       if(action==='disconnect'){await fibuApi('/microsoft/'+company+'/disconnect',{});state=await fibuApi('/companies');c=state.companies.find(c=>c.id===company);render();return;}
-      if(action==='closeModal'){$('#fibuHomeModal').close();return;}
+      if(action==='closeModal'){browseGeneration++;$('#fibuHomeModal').close();return;}
       if(action==='new'){edit(null);return;}
       if(action==='edit'){edit(m);return;}
       if(action==='open'){if(latest(month))viewFibu(company,month);else edit(m);return;}
-      if(action==='folder'&&state.mode==='cloud'){await browse(m.monthFolderPath);return;}if(action==='folder'){modal(`<h2>FiBu-Ordner</h2><div class="f-path">${esc(m.monthFolderPath)}</div><p>Der Ordner liegt auf dem verbundenen Rechner. Ein hinterlegter OneDrive-Weblink öffnet ihn im Browser.</p>${m.folderUrl?`<a class="f-link" href="${esc(m.folderUrl)}" target="_blank" rel="noopener">Ordner öffnen ↗</a>`:button('edit','Ordnerlink hinterlegen')}`);return;}
+      if(action==='folder'&&state.mode==='cloud'){openPicker('view',m);return;}if(action==='folder'){modal(`<h2>FiBu-Ordner</h2><div class="f-path">${esc(m.monthFolderPath)}</div><p>Der Ordner liegt auf dem verbundenen Rechner. Ein hinterlegter OneDrive-Weblink öffnet ihn im Browser.</p>${m.folderUrl?`<a class="f-link" href="${esc(m.folderUrl)}" target="_blank" rel="noopener">Ordner öffnen ↗</a>`:button('edit','Ordnerlink hinterlegen')}`);return;}
       if(action==='start'){
         if(!m.bankPdfPath){edit(m);return;}
         modal(`<h2>Astra FIBU starten</h2><p>Du beauftragst die Prüfung dieser Firma und dieses Monats. Der Originalauszug bleibt erhalten.</p><div class="f-path"><b>${esc(CO[company].n)} · ${name(month)}</b><p>Belegordner: ${esc(m.monthFolderPath)}</p><p>Kontoauszug: ${esc(m.bankPdfPath)}</p></div><p>Belege sammeln, mit Bankbuchungen abgleichen und eine markierte Kopie speichern. Unklare Zuordnungen bleiben offen.</p><div id="fibuModalError" class="f-error" role="alert"></div><div class="f-dialogfoot">${button('closeModal','Abbrechen')}${button('confirmStart','▶ Prüfung starten',true)}</div>`);return;
       }
-      if(action==='confirmStart'){b.disabled=true;try{await fibuApi('/jobs',{companyId:company,monthFolderPath:m.monthFolderPath,bankPdfPath:m.bankPdfPath});viewFibu(company,month);}catch(e){$('#fibuModalError').textContent=e.message;b.disabled=false;}return;}
+      if(action==='confirmStart'){b.disabled=true;try{await fibuApi('/jobs',{companyId:company,month:m.month,monthFolderPath:m.monthFolderPath,bankPdfPath:m.bankPdfPath,bankDrivePath:m.bankDrivePath===true});viewFibu(company,month);}catch(e){$('#fibuModalError').textContent=e.message;b.disabled=false;}return;}
     }catch(e){error(e);}
   }
   $('#main').innerHTML='<p>FiBu-Monate werden geladen …</p>';

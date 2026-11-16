@@ -1,5 +1,5 @@
 const fs=require('node:fs/promises'),path=require('node:path');
-const {inside,monthFromFolder,writeVerified,fail}=require('./core');
+const {inside,writeVerified,fail}=require('./core');
 const {cleanPath}=require('./onedrive');
 function cloudWorker({store,worker,ms}){
  const running=new Set();
@@ -9,23 +9,28 @@ function cloudWorker({store,worker,ms}){
   try{
    job.state='running';job.progress='OneDrive-Dateien werden direkt auf dem Server geladen.';store.save(job);
    if(!ms.connected(owner,job.companyId))fail('Microsoft für OneDrive und E-Post verbinden.',409);
-   cleanPath(job.sourceMonthPath);const month=monthFromFolder(job.sourceMonthPath);
-   if(typeof job.sourceBankName!=='string'||/[\\/\x00-\x1f]/.test(job.sourceBankName)||! /\.pdf$/i.test(job.sourceBankName)||/_Astra(?:_|\.)/i.test(job.sourceBankName))fail('Original-Bank-PDF wählen.',400);
+   cleanPath(job.sourceMonthPath,{empty:true});const month=job.month;if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))fail('Gültigen Prüfmonat wählen.',400);
+   cleanPath(job.sourceBankName);
+   if(! /\.pdf$/i.test(job.sourceBankName)||/_Astra(?:_|\.)/i.test(path.posix.basename(job.sourceBankName)))fail('Original-Bank-PDF wählen.',400);
    await fs.mkdir(c.root,{recursive:true,mode:0o700});
    const ownerRoot=path.join(c.root,String(owner));await fs.mkdir(ownerRoot,{recursive:true,mode:0o700});await inside(c.root,ownerRoot,'directory');
    const local={...c,root:ownerRoot,collectionFolder:path.join(ownerRoot,'collection')};
    const folder=path.join(ownerRoot,'jobs',id,...month.split('-'));await fs.mkdir(folder,{recursive:true,mode:0o700});await fs.mkdir(local.collectionFolder,{recursive:true,mode:0o700});
    const entries=await ms.driveList(owner,job.companyId,job.sourceMonthPath);
-   const bank=entries.find(d=>d.file&&d.name===job.sourceBankName);if(!bank)fail('Bank-PDF fehlt im gewählten OneDrive-Monatsordner.');
+   const bankPath=(job.sourceBankIsDrivePath||job.sourceBankName.includes('/'))?job.sourceBankName:job.sourceMonthPath+'/'+job.sourceBankName;
+   const bankFolder=path.posix.dirname(bankPath)==='.'?'':path.posix.dirname(bankPath);
+   const bankEntries=bankFolder===job.sourceMonthPath?entries:await ms.driveList(owner,job.companyId,bankFolder);
+   const bank=bankEntries.find(d=>d.file&&d.name===path.posix.basename(bankPath));if(!bank)fail('Bank-PDF fehlt im gewählten OneDrive-Ordner.');
    const snapshots=[];let total=0;
    async function copy(entry,relative,destination){
     if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
     if(/[\\/\x00-\x1f]/.test(entry.name)||entry.name==='.'||entry.name==='..')fail('Ungültiger OneDrive-Dateiname.');
     total+=entry.size;if(total>100*1024*1024)fail('OneDrive-Quellen über 100 MB. Monat/Sammelordner eingrenzen.');
-    const {bytes,source}=await ms.driveDownload(owner,job.companyId,relative+'/'+entry.name);
-    const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:relative+'/'+entry.name});return saved;
+    const sourcePath=(relative?relative+'/':'')+entry.name;
+    const {bytes,source}=await ms.driveDownload(owner,job.companyId,sourcePath);
+    const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:sourcePath});return saved;
    }
-   job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,job.sourceMonthPath,folder);
+   job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
    const markedBankPrefix=path.parse(bank.name).name+'_Astra';

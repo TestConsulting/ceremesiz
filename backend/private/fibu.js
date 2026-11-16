@@ -73,7 +73,7 @@ async function viewFibu(company,selectedMonth=null) {
     try{const j=await fibuApi('/jobs/'+current.id);if(generation!==fibuGeneration||curRoute!=='fibu-'+company)return;draw(j);if(['queued','running'].includes(j.state))fibuTimer=setTimeout(poll,1500);}catch(e){error(e);}
   }
   async function load(){jobs=(await fibuApi('/jobs?companyId='+company)).jobs.filter(j=>!selectedMonth||j.month===selectedMonth);$('#fibuJobs').innerHTML=jobs.map(j=>`<option value="${j.id}">${esc(j.month)} · ${fibuTime(j.created)} · ${esc(fibuLabel(j.state))}</option>`).join('')||'<option>Keine Läufe</option>';if(jobs[0]){draw(jobs[0]);if(['queued','running'].includes(jobs[0].state))fibuTimer=setTimeout(poll,1500);}}
-  form.onsubmit=async e=>{e.preventDefault();$('#fibuError').textContent='';$('#fibuPlay').disabled=true;try{const j=await fibuApi('/jobs',{companyId:company,monthFolderPath:form.folder.value,bankPdfPath:form.bank.value});await load();draw(j);fibuTimer=setTimeout(poll,1000);}catch(e){error(e);$('#fibuPlay').disabled=false;}};
+  form.onsubmit=async e=>{e.preventDefault();$('#fibuError').textContent='';$('#fibuPlay').disabled=true;try{const j=await fibuApi('/jobs',{companyId:company,month:current?.month||selectedMonth,monthFolderPath:form.folder.value,bankPdfPath:form.bank.value,bankDrivePath:current?.sourceBankIsDrivePath===true&&form.bank.value===current.sourceBankName});await load();draw(j);fibuTimer=setTimeout(poll,1000);}catch(e){error(e);$('#fibuPlay').disabled=false;}};
   $('#fibuJobs').onchange=()=>{const j=jobs.find(j=>j.id===$('#fibuJobs').value);if(j){clearTimeout(fibuTimer);draw(j);poll();}};
   try {
     const state=await fibuApi('/companies');if(generation!==fibuGeneration)return;

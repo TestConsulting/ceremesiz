@@ -34,6 +34,7 @@ function microsoft(config,{vault=null}={}) {
     connected:(o,c)=>!!session(o,c)?.access_token,
     disconnect:(o,c)=>{sessions.delete(key(o,c));vault?.delete(o,c);},
     driveList:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).list(o,c,p),
+    driveFolder:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).folder(o,c,p),
     driveDownload:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).download(o,c,p),
     async begin(o,c) {
       if(!authority) fail('Microsoft-App ist nicht konfiguriert.',503);
