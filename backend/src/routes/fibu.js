@@ -44,12 +44,19 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     if(existing&&existing.month!==month)fail('Prüfmonat eines Eintrags nicht ändern.',400);
     const folderId=existing?.id||(b.create===true?require('node:crypto').randomUUID():month);
     if(store.isClosed(b.companyId,month,folderId))fail('Abgeschlossenen Monat zuerst wieder öffnen.',409);
+    if(b.name!==undefined&&(typeof b.name!=='string'||!b.name.trim()||b.name.trim().length>120))fail('Name mit 1 bis 120 Zeichen angeben.',400);
     if(b.label!==undefined&&(typeof b.label!=='string'||b.label.length>80))fail('Bezeichnung bis 80 Zeichen verwenden.',400);
     let folderUrl='';if(b.folderUrl){try{const u=new URL(b.folderUrl);if(u.protocol!=='https:'||u.username||u.password)throw Error();folderUrl=u.href;}catch{fail('Nur gültige HTTPS-Ordnerlinks erlauben.',400);}}
     if(config.mode==='local')await inside(c.root,b.monthFolderPath,'directory');
     if(config.mode==='cloud'){require('../fibu/onedrive').cleanPath(b.monthFolderPath,{empty:true});require('../fibu/onedrive').cleanPath(b.bankPdfPath);if(!/\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-PDF aus OneDrive wählen.',400);}
-    const saved={id:folderId,createdAt:existing?.createdAt||new Date().toISOString(),label:b.label?.trim()||existing?.label||'',companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankDrivePath:config.mode==='cloud'&&b.bankDrivePath===true,folderUrl,storageMode:config.mode};
+    const saved={id:folderId,name:b.name?.trim()||existing?.name||(existing?undefined:'FiBu '+month.slice(5)+'/'+month.slice(0,4)+(b.label?' · '+b.label.trim():'')),createdAt:existing?.createdAt||new Date().toISOString(),label:b.label?.trim()||existing?.label||'',companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankDrivePath:config.mode==='cloud'&&b.bankDrivePath===true,folderUrl,storageMode:config.mode};
     store.putFolder(req.user.id,b.companyId,folderId,saved);res.status(b.create===true?201:200).json(saved);
+  });
+  router.post('/months/:id/name',...write,(req,res)=>{
+    const b=req.body;companyFor(config,req.user,b.companyId);
+    const entry=store.folders(req.user.id,b.companyId).find(m=>m.id===req.params.id);if(!entry)fail('FiBu-Eintrag nicht gefunden.',404);
+    if(typeof b.name!=='string'||!b.name.trim()||b.name.trim().length>120)fail('Name mit 1 bis 120 Zeichen angeben.',400);
+    const saved={...entry,name:b.name.trim()};store.putFolder(req.user.id,b.companyId,entry.id,saved);res.json(saved);
   });
   router.get('/jobs',(req,res)=>{
     companyFor(config,req.user,req.query.companyId);

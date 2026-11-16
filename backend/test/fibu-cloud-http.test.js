@@ -33,6 +33,10 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  assert.ok((await(await api('/jobs?companyId=tc')).json()).jobs.some(j=>j.id===rootJob.id));
  const createProfile=async label=>{const r=await api('/months',{...params,create:true,label});assert.equal(r.status,201);return r.json();};
  const first=await createProfile('Original'),second=await createProfile('Testlauf');assert.notEqual(first.id,second.id);
+ assert.equal((await api('/months/'+second.id+'/name',{companyId:'tc',name:'   '})).status,400);
+ assert.equal((await api('/months/unknown/name',{companyId:'tc',name:'Test'})).status,404);
+ const renamed=await(await api('/months/'+second.id+'/name',{companyId:'tc',name:'  Mein eigener Oktober  '})).json();assert.equal(renamed.name,'Mein eigener Oktober');assert.equal(renamed.monthFolderPath,second.monthFolderPath);assert.equal(renamed.bankPdfPath,second.bankPdfPath);
+ assert.equal((await(await api('/months?companyId=tc')).json()).months.find(m=>m.id===first.id).name,first.name);
  let profiles=(await(await api('/months?companyId=tc')).json()).months;assert.equal(profiles.length,3);assert.ok(profiles.some(m=>m.id==='2026-10'));
  assert.equal((await api('/months',{...second,monthFolderPath:'Belege/10_Test'})).status,200);
  profiles=(await(await api('/months?companyId=tc')).json()).months;assert.equal(profiles.find(m=>m.id===first.id).monthFolderPath,params.monthFolderPath);assert.equal(profiles.find(m=>m.id===second.id).monthFolderPath,'Belege/10_Test');

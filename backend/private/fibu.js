@@ -15,9 +15,9 @@ function fibuProgress(job){
  const estimate=active?(remaining===null?'Restzeit wird ermittelt':'Restzeit grob '+duration(remaining*.7)+'–'+duration(remaining*1.5)+' · Schätzung, abhängig von OCR und Verbindung'):(percent===100?'Verarbeitung beendet':'Verarbeitung angehalten');
  return '<div class="f-job-progress" style="margin:12px 0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>'+esc(p.label)+(p.total?' · '+p.done+'/'+p.total:'')+'</strong><span>'+percent+' %</span></div><progress aria-label="Fortschritt des Prüflaufs" max="100" value="'+percent+'" style="width:100%;height:12px;accent-color:#00853f"></progress><small style="display:block;margin-top:5px;color:#74828a">'+estimate+' · Bisher '+duration(elapsed)+'</small></div>';
 }
-async function viewFibu(company,selectedMonth=null,selectedFolder=null) {
+async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedName=null) {
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
-  $('#main').innerHTML=head(company,'Finanzbuchhaltung','FiBu '+(selectedMonth?selectedMonth.slice(5)+'/'+selectedMonth.slice(0,4):''),'<button class="btn" id="fibuBack">← FiBu-Monate</button>')+`<style>
+  $('#main').innerHTML=head(company,'Finanzbuchhaltung',esc(selectedName||'FiBu '+(selectedMonth?selectedMonth.slice(5)+'/'+selectedMonth.slice(0,4):'')),'<button class="btn" id="fibuBack">← FiBu-Monate</button>')+`<style>
     .fibu-form{display:grid;gap:12px;padding:20px}.fibu-form label{display:grid;gap:6px}.fibu-form input{width:100%;box-sizing:border-box;padding:10px}
     .fibu-review{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(350px,1fr);gap:16px}.fibu-review iframe{width:100%;height:640px;border:1px solid var(--line);order:0;border-radius:10px}.fibu-review #fibuRows{order:1;max-height:640px;overflow:auto}
     .fibu-row{padding:14px;border-bottom:1px solid var(--line);border-left:5px solid transparent}.fibu-row[data-color=green]{border-left-color:#39a85b}.fibu-row[data-color=yellow]{border-left-color:#d5b323}.fibu-row[data-color=purple]{border-left-color:#9d63bc}
