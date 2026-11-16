@@ -42,6 +42,7 @@ async function viewFibuHome(company){
   }
   function openPicker(mode,m){
     pickerMode=mode;pickerMonth=m||null;selectedBank=m?.bankPdfPath||'';
+    if(selectedBank&&m&&!m.bankDrivePath&&!selectedBank.includes('/'))selectedBank=m.monthFolderPath+'/'+selectedBank;
     let initial=m?.monthFolderPath||c.cloudMonthBase||'';
     if(mode==='bank'&&(selectedBank.includes('/')||m?.bankDrivePath))initial=selectedBank.split('/').slice(0,-1).join('/');
     browse(initial).catch(error);

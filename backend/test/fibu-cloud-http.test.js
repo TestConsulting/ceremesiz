@@ -24,4 +24,10 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  const original=Buffer.from(await(await api('/jobs/'+job.id+'/files/original')).arrayBuffer());assert.deepEqual(original,bank);
  assert.ok(result.cloudSources.some(s=>s.path==='Bankarchiv/2026/10/Bank.pdf'));
  assert.equal((await api('/jobs/'+job.id+'/month',{action:'close'})).status,409);
+ const rootParams={...params,monthFolderPath:'',bankPdfPath:'Bank.pdf',bankDrivePath:true};
+ assert.equal((await api('/months',rootParams)).status,200);
+ const rootStart=await api('/jobs',rootParams);assert.equal(rootStart.status,202);const rootJob=await rootStart.json();
+ let rootResult;for(let n=0;n<100;n++){rootResult=await(await api('/jobs/'+rootJob.id)).json();if(!['queued','running'].includes(rootResult.state))break;await new Promise(r=>setTimeout(r,100));}
+ assert.equal(rootResult.state,'completed');assert.ok(rootResult.cloudSources.some(s=>s.path==='Bank.pdf'));
+ assert.ok((await(await api('/jobs?companyId=tc')).json()).jobs.some(j=>j.id===rootJob.id));
 });
