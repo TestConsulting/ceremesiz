@@ -38,12 +38,18 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.post('/months',...write,async(req,res)=>{
     const b=req.body,c=companyFor(config,req.user,b.companyId),month=config.mode==='cloud'&&/^20\d{2}-(0[1-9]|1[0-2])$/.test(b.month)?b.month:monthFromFolder(b.monthFolderPath);
     if(b.monthFolderPath.length>2000||typeof b.bankPdfPath!=='string'||b.bankPdfPath.length>2000||b.monthFolderPath.split(/[\\/]/).includes('..')||b.bankPdfPath.split(/[\\/]/).includes('..'))fail('Ungültige Ordner-/Dateipfade.',400);
-    if(store.isClosed(b.companyId,month))fail('Abgeschlossenen Monat zuerst wieder öffnen.',409);
+    const existing=b.id?store.folders(req.user.id,b.companyId).find(m=>m.id===b.id):null;
+    if(b.id&&!existing)fail('FiBu-Eintrag nicht gefunden.',404);
+    if(existing&&store.hasActive(b.companyId,month))fail('Während einer Prüfung die Pfade nicht ändern.',409);
+    if(existing&&existing.month!==month)fail('Prüfmonat eines Eintrags nicht ändern.',400);
+    const folderId=existing?.id||(b.create===true?require('node:crypto').randomUUID():month);
+    if(store.isClosed(b.companyId,month,folderId))fail('Abgeschlossenen Monat zuerst wieder öffnen.',409);
+    if(b.label!==undefined&&(typeof b.label!=='string'||b.label.length>80))fail('Bezeichnung bis 80 Zeichen verwenden.',400);
     let folderUrl='';if(b.folderUrl){try{const u=new URL(b.folderUrl);if(u.protocol!=='https:'||u.username||u.password)throw Error();folderUrl=u.href;}catch{fail('Nur gültige HTTPS-Ordnerlinks erlauben.',400);}}
     if(config.mode==='local')await inside(c.root,b.monthFolderPath,'directory');
     if(config.mode==='cloud'){require('../fibu/onedrive').cleanPath(b.monthFolderPath,{empty:true});require('../fibu/onedrive').cleanPath(b.bankPdfPath);if(!/\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-PDF aus OneDrive wählen.',400);}
-    const saved={companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankDrivePath:config.mode==='cloud'&&b.bankDrivePath===true,folderUrl,storageMode:config.mode};
-    store.putFolder(req.user.id,b.companyId,month,saved);res.json(saved);
+    const saved={id:folderId,createdAt:existing?.createdAt||new Date().toISOString(),label:b.label?.trim()||existing?.label||'',companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankDrivePath:config.mode==='cloud'&&b.bankDrivePath===true,folderUrl,storageMode:config.mode};
+    store.putFolder(req.user.id,b.companyId,folderId,saved);res.status(b.create===true?201:200).json(saved);
   });
   router.get('/jobs',(req,res)=>{
     companyFor(config,req.user,req.query.companyId);
@@ -52,30 +58,31 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.post('/jobs',...write,async(req,res)=>{
     const b=req.body,c=companyFor(config,req.user,b.companyId),month=config.mode==='cloud'&&/^20\d{2}-(0[1-9]|1[0-2])$/.test(b.month)?b.month:monthFromFolder(b.monthFolderPath);
     if(b.month&&b.month!==month)fail('Abweichender Monat.',400);
+    if(b.folderId){const profile=store.folders(req.user.id,b.companyId).find(m=>m.id===b.folderId);if(!profile)fail('FiBu-Eintrag nicht gefunden.',404);if(profile.month!==month||profile.monthFolderPath!==b.monthFolderPath||profile.bankPdfPath!==b.bankPdfPath||(profile.bankDrivePath===true)!==(b.bankDrivePath===true))fail('FiBu-Pfade wurden geändert. Übersicht neu laden.',409);}
     if(config.mode==='cloud'){
       require('../fibu/onedrive').cleanPath(b.monthFolderPath,{empty:true});
       require('../fibu/onedrive').cleanPath(b.bankPdfPath);if(! /\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-Bank-PDF wählen.',400);
       if(!ms.connected(req.user.id,b.companyId))fail('Microsoft zuerst verbinden.',409);
-      const job=store.enqueue(req.user.id,{companyId:b.companyId,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,sourceBankIsDrivePath:b.bankDrivePath===true,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
+      const job=store.enqueue(req.user.id,{companyId:b.companyId,folderId:b.folderId||undefined,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,sourceBankIsDrivePath:b.bankDrivePath===true,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
       res.status(202).json(job);setImmediate(()=>cloud.run(job.id,req.user.id,c));return;
     }
     if(config.mode==='remote') {
       if(typeof b.bankPdfPath!=='string'||b.bankPdfPath.length>2000||! /\.pdf$/i.test(b.bankPdfPath)||b.bankPdfPath.split(/[\\/]/).includes('..'))fail('Gültigen Bank-PDF-Pfad angeben.',400);
-      const job=store.enqueue(req.user.id,{companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
+      const job=store.enqueue(req.user.id,{companyId:b.companyId,folderId:b.folderId||undefined,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
       return res.status(202).json(job);
     }
     const folder=await inside(c.root,b.monthFolderPath,'directory'),bank=await inside(folder,b.bankPdfPath);
     if(!/\.pdf$/i.test(bank)||/_Astra(?:_|\.)/i.test(bank))fail('Original-Bank-PDF auswählen.',400);
     const bytes=await fs.readFile(bank);if(bytes.subarray(0,5).toString()!=='%PDF-')fail('PDF ungültig.',400);
-    const job=store.enqueue(req.user.id,{companyId:b.companyId,month,monthFolderPath:folder,bankPdfPath:bank,bankHash:hash(bytes)});
+    const job=store.enqueue(req.user.id,{companyId:b.companyId,folderId:b.folderId||undefined,month,monthFolderPath:folder,bankPdfPath:bank,bankHash:hash(bytes)});
     res.status(202).json(job);
     setImmediate(()=>worker.run(job.id,req.user.id,c));
   });
   router.get('/jobs/:id',(req,res)=>res.json(jobFor(req)));
   router.post('/jobs/:id/documents/:documentId/verify',...write,async(req,res)=>{
     const job=jobFor(req),c=companyFor(config,req.user,job.companyId);
-    if(store.hasActive(job.companyId,job.month)||worker.running.has(job.id)||store.isClosed(job.companyId,job.month))fail('Monat läuft oder ist abgeschlossen.',409);
-    if(store.month(job.owner,job.companyId,job.month)?.jobId!==job.id)fail('Nur den neuesten Prüflauf bearbeiten.',409);
+    if(store.hasActive(job.companyId,job.month)||worker.running.has(job.id)||store.isClosed(job.companyId,job.month,job.folderId))fail('Monat läuft oder ist abgeschlossen.',409);
+    if(store.month(job.owner,job.companyId,job.month,job.folderId)?.jobId!==job.id)fail('Nur den neuesten Prüflauf bearbeiten.',409);
     const d=job.documents.find(d=>d.id===req.params.documentId);if(!d)fail('Dokument fehlt.',404);
     require('../fibu/review').validateReview(req.body,c);
     if(config.mode==='remote'){job.pendingReview={type:'document',documentId:d.id,details:req.body};return res.status(202).json(store.save(job,'queued'));}
@@ -90,8 +97,8 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.post('/jobs/:id/assign',...write,async(req,res)=>{
     const job=jobFor(req),c=companyFor(config,req.user,job.companyId);
     if(['queued','running'].includes(job.state)||worker.running.has(job.id))fail('Prüflauf arbeitet noch.',409);
-    if(store.isClosed(job.companyId,job.month))fail('Monat zuerst wieder öffnen.',409);
-    if(store.month(job.owner,job.companyId,job.month)?.jobId!==job.id)fail('Nur den neuesten gespeicherten Prüflauf bearbeiten.',409);
+    if(store.isClosed(job.companyId,job.month,job.folderId))fail('Monat zuerst wieder öffnen.',409);
+    if(store.month(job.owner,job.companyId,job.month,job.folderId)?.jobId!==job.id)fail('Nur den neuesten gespeicherten Prüflauf bearbeiten.',409);
     const t=job.transactions.find(t=>t.id===req.body.transactionId);if(!t)fail('Buchung fehlt.',404);
     if(typeof req.body.reason!=='string'||req.body.reason.trim().length<5)fail('Nachvollziehbaren Grund angeben.',400);
     if(config.mode==='remote') {
@@ -112,15 +119,15 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     }catch(e){job.issues.push('Manuelle Änderung nur teilweise ausgeführt. Bereits verifizierte Ablagen prüfen.');job.progress='Manuelle Prüfung benötigt Klärung';store.save(job,'partial');throw e;}finally{worker.running.delete(job.id);}
   });
   router.post('/jobs/:id/month',...write,(req,res)=>{
-    const job=jobFor(req),m=store.month(job.owner,job.companyId,job.month);
+    const job=jobFor(req),m=store.month(job.owner,job.companyId,job.month,job.folderId);
     if(req.body.action==='close'&&companyFor(config,req.user,job.companyId).pilotMode===true)fail('Eine Pilot-Arbeitskopie kann keinen produktiven Monatsabschluss erhalten.',409);
     if(!m)fail('Noch kein geprüfter Monat.',409);
     if(worker.running.has(job.id)||store.hasActive(job.companyId,job.month))fail('Prüfung läuft noch.',409);
     if(!['close','reopen'].includes(req.body.action))fail('Aktion ungültig.',400);
-    if(store.isClosed(job.companyId,job.month)&&!m.closed)fail('Der Monat wurde von einem anderen Benutzer abgeschlossen. Dieser muss ihn ausdrücklich wieder öffnen.',409);
+    if(store.isClosed(job.companyId,job.month,job.folderId)&&!m.closed)fail('Der Monat wurde von einem anderen Benutzer abgeschlossen. Dieser muss ihn ausdrücklich wieder öffnen.',409);
     if(req.body.action==='close'&&(m.jobId!==job.id||job.issues.length||!job.transactions.length||job.transactions.some(t=>['missing','manual'].includes(t.status))))fail('Offene Belege/Fehler verhindern den Monatsabschluss.',409);
     job.events.push({at:new Date().toISOString(),message:req.body.action==='close'?'Monat ausdrücklich abgeschlossen':'Monat ausdrücklich wieder geöffnet'});
-    store.putMonth(job.owner,job.companyId,job.month,m,req.body.action==='close');store.save(job);res.json({closed:req.body.action==='close'});
+    store.putMonth(job.owner,job.companyId,job.month,m,req.body.action==='close',job.folderId);store.save(job);res.json({closed:req.body.action==='close'});
   });
   router.get('/jobs/:id/files/:kind',async(req,res)=>{
     const job=jobFor(req),c=companyFor(config,req.user,job.companyId);

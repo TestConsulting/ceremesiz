@@ -105,7 +105,7 @@ function engine({store,config,ms}) {
     job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
     job.events.push({at:job.lastSuccessfulCheck,message:'Markierte PDF gespeichert und Text/Seitenzahl verifiziert; Ergebnis: '+job.state});
     job.reportPath=await writeVerified(folder,`ASTRA_Pruefbericht_${job.month}_${job.id}.json`,Buffer.from(JSON.stringify({...job,documents:job.documents.map(({text,...d})=>d)},null,2)));
-    store.putMonth(job.owner,job.companyId,job.month,{execution:job.execution||'local',bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id});
+    store.putMonth(job.owner,job.companyId,job.month,{execution:job.execution||'local',bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id},false,job.folderId);
   }
   async function verifyDocument(job,d,body,c){
     const file=await inside(c.root,d.path);if(hash(await fs.readFile(file))!==d.hash)fail('Beleg wurde seit der Prüfung verändert.',409);
@@ -122,7 +122,7 @@ function engine({store,config,ms}) {
       const checked=await validate(c,job);
       if(checked.bankHash!==job.bankHash)fail('Bankdatei wurde nach Auftrag geändert.');
       job.transactions=checked.transactions;job.controls=checked.controls||null;job.issues.push(...checked.issues);
-      const storedPrevious=store.month(owner,job.companyId,job.month),previous=job.execution==='server'&&storedPrevious?.execution!=='server'?null:storedPrevious;
+      const storedPrevious=store.month(owner,job.companyId,job.month,job.folderId),previous=job.execution==='server'&&storedPrevious?.execution!=='server'?null:storedPrevious;
       if(previous&&previous.bankHash!==job.bankHash)job.issues.push('Neue Bankrevision: frühere Zuordnungen bleiben in der Historie, Koordinaten müssen neu geprüft werden.');
       const collection=await inside(c.root,c.collectionFolder,'directory');
       event(job,'Bankkonto und Auszugszeitraum geprüft.');

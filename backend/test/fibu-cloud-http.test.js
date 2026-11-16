@@ -31,4 +31,15 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  let rootResult;for(let n=0;n<100;n++){rootResult=await(await api('/jobs/'+rootJob.id)).json();if(!['queued','running'].includes(rootResult.state))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(rootResult.state,'completed');assert.ok(rootResult.cloudSources.some(s=>s.path==='Bank.pdf'));
  assert.ok((await(await api('/jobs?companyId=tc')).json()).jobs.some(j=>j.id===rootJob.id));
+ const createProfile=async label=>{const r=await api('/months',{...params,create:true,label});assert.equal(r.status,201);return r.json();};
+ const first=await createProfile('Original'),second=await createProfile('Testlauf');assert.notEqual(first.id,second.id);
+ let profiles=(await(await api('/months?companyId=tc')).json()).months;assert.equal(profiles.length,3);assert.ok(profiles.some(m=>m.id==='2026-10'));
+ assert.equal((await api('/months',{...second,monthFolderPath:'Belege/10_Test'})).status,200);
+ profiles=(await(await api('/months?companyId=tc')).json()).months;assert.equal(profiles.find(m=>m.id===first.id).monthFolderPath,params.monthFolderPath);assert.equal(profiles.find(m=>m.id===second.id).monthFolderPath,'Belege/10_Test');
+ assert.equal((await api('/jobs',{...params,folderId:'unknown-profile'})).status,404);
+ assert.equal((await api('/jobs',{...params,folderId:second.id})).status,409);
+ const profiled=await api('/jobs',{...params,folderId:first.id});assert.equal(profiled.status,202);const profiledJob=await profiled.json();let profiledResult;
+ for(let n=0;n<100;n++){profiledResult=await(await api('/jobs/'+profiledJob.id)).json();if(!['queued','running'].includes(profiledResult.state))break;await new Promise(r=>setTimeout(r,100));}
+ assert.equal(profiledResult.state,'completed');assert.equal(profiledResult.folderId,first.id);
+ const store=require('../src/fibu/store').createStore(db);assert.equal(store.month(profiledResult.owner,'tc','2026-10',first.id).jobId,profiledJob.id);assert.equal(store.month(profiledResult.owner,'tc','2026-10').jobId,rootJob.id);assert.equal(store.month(profiledResult.owner,'tc','2026-10',second.id),null);
 });

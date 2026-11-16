@@ -15,7 +15,7 @@ function fibuProgress(job){
  const estimate=active?(remaining===null?'Restzeit wird ermittelt':'Restzeit grob '+duration(remaining*.7)+'–'+duration(remaining*1.5)+' · Schätzung, abhängig von OCR und Verbindung'):(percent===100?'Verarbeitung beendet':'Verarbeitung angehalten');
  return '<div class="f-job-progress" style="margin:12px 0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>'+esc(p.label)+(p.total?' · '+p.done+'/'+p.total:'')+'</strong><span>'+percent+' %</span></div><progress aria-label="Fortschritt des Prüflaufs" max="100" value="'+percent+'" style="width:100%;height:12px;accent-color:#00853f"></progress><small style="display:block;margin-top:5px;color:#74828a">'+estimate+' · Bisher '+duration(elapsed)+'</small></div>';
 }
-async function viewFibu(company,selectedMonth=null) {
+async function viewFibu(company,selectedMonth=null,selectedFolder=null) {
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
   $('#main').innerHTML=head(company,'Finanzbuchhaltung','FiBu '+(selectedMonth?selectedMonth.slice(5)+'/'+selectedMonth.slice(0,4):''),'<button class="btn" id="fibuBack">← FiBu-Monate</button>')+`<style>
     .fibu-form{display:grid;gap:12px;padding:20px}.fibu-form label{display:grid;gap:6px}.fibu-form input{width:100%;box-sizing:border-box;padding:10px}
@@ -80,8 +80,8 @@ async function viewFibu(company,selectedMonth=null) {
     if(generation!==fibuGeneration||curRoute!=='fibu-'+company||!current)return;
     try{const j=await fibuApi('/jobs/'+current.id);if(generation!==fibuGeneration||curRoute!=='fibu-'+company)return;draw(j);if(['queued','running'].includes(j.state))fibuTimer=setTimeout(poll,1500);}catch(e){error(e);}
   }
-  async function load(){jobs=(await fibuApi('/jobs?companyId='+company)).jobs.filter(j=>!selectedMonth||j.month===selectedMonth);$('#fibuJobs').innerHTML=jobs.map(j=>`<option value="${j.id}">${esc(j.month)} · ${fibuTime(j.created)} · ${esc(fibuLabel(j.state))}</option>`).join('')||'<option>Keine Läufe</option>';if(jobs[0]){draw(jobs[0]);if(['queued','running'].includes(jobs[0].state))fibuTimer=setTimeout(poll,1500);}}
-  form.onsubmit=async e=>{e.preventDefault();$('#fibuError').textContent='';$('#fibuPlay').disabled=true;try{const j=await fibuApi('/jobs',{companyId:company,month:current?.month||selectedMonth,monthFolderPath:form.folder.value,bankPdfPath:form.bank.value,bankDrivePath:current?.sourceBankIsDrivePath===true&&form.bank.value===current.sourceBankName});await load();draw(j);fibuTimer=setTimeout(poll,1000);}catch(e){error(e);$('#fibuPlay').disabled=false;}};
+  async function load(){jobs=(await fibuApi('/jobs?companyId='+company)).jobs.filter(j=>(!selectedMonth||j.month===selectedMonth)&&(!selectedFolder||(j.folderId||j.month)===selectedFolder));$('#fibuJobs').innerHTML=jobs.map(j=>`<option value="${j.id}">${esc(j.month)} · ${fibuTime(j.created)} · ${esc(fibuLabel(j.state))}</option>`).join('')||'<option>Keine Läufe</option>';if(jobs[0]){draw(jobs[0]);if(['queued','running'].includes(jobs[0].state))fibuTimer=setTimeout(poll,1500);}}
+  form.onsubmit=async e=>{e.preventDefault();$('#fibuError').textContent='';$('#fibuPlay').disabled=true;try{const j=await fibuApi('/jobs',{companyId:company,folderId:selectedFolder||current?.folderId,month:current?.month||selectedMonth,monthFolderPath:form.folder.value,bankPdfPath:form.bank.value,bankDrivePath:current?.sourceBankIsDrivePath===true&&form.bank.value===current.sourceBankName});await load();draw(j);fibuTimer=setTimeout(poll,1000);}catch(e){error(e);$('#fibuPlay').disabled=false;}};
   $('#fibuJobs').onchange=()=>{const j=jobs.find(j=>j.id===$('#fibuJobs').value);if(j){clearTimeout(fibuTimer);draw(j);poll();}};
   try {
     const state=await fibuApi('/companies');if(generation!==fibuGeneration)return;

@@ -61,7 +61,7 @@ function runnerApi({store,config,ms,db}) {
     }
     const saved={...result,id:old.id,owner:old.owner,companyId:old.companyId,month:old.month,created:old.created,remoteFiles,cancelRequested:old.cancelRequested,pendingReview:null};
     store.save(saved);
-    if(saved.lastSuccessfulCheck)store.putMonth(saved.owner,saved.companyId,saved.month,{jobId:saved.id,bankHash:saved.bankHash,lastSuccessfulCheck:saved.lastSuccessfulCheck,transactions:saved.transactions});
+    if(saved.lastSuccessfulCheck)store.putMonth(saved.owner,saved.companyId,saved.month,{jobId:saved.id,bankHash:saved.bankHash,lastSuccessfulCheck:saved.lastSuccessfulCheck,transactions:saved.transactions},false,saved.folderId);
     res.json({ok:true});
   });
   router.use((err,req,res,next)=>{if(res.headersSent)return next(err);res.status(err.status||422).json({error:err.status?err.message:'Windows-Dienst-Anfrage fehlgeschlagen.'});});
