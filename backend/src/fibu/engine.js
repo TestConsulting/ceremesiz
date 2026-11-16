@@ -148,8 +148,11 @@ function engine({store,config,ms}) {
           try {const file=await inside(c.root,r.path);if(hash(await fs.readFile(file))===r.hash&&!job.documents.some(d=>d.hash===r.hash)){const d=await document(file,c,{source:'previous'});job.documents.push(require('./review').applyReview(d,store.documentReview(owner,job.companyId,d.hash),c));}}
         catch{job.issues.push('Früherer Beleg nicht mehr verifiziert: '+r.name);}
       }
-      const candidates=new Map(job.transactions.map(t=>[t.id,match(t,job.documents)]));
-      const groups=allocations(job.transactions,job.documents);
+      const matchDocuments=require('./core').canonicalDocuments(job.documents);
+      const crossGroups=require('./cross-check').qualifiedCrossChecks(job.transactions,matchDocuments,c);
+      const paymentGroups=require('./payment-evidence').qualifiedPayments(job.transactions,matchDocuments,c);
+      const candidates=new Map(job.transactions.map(t=>[t.id,match(t,matchDocuments)]));
+      const groups=allocations(job.transactions,matchDocuments);
       let matched=0;for(const t of job.transactions) {
         advance(job,store,'match',matched++,job.transactions.length);
         checkpoint(job);Object.assign(t,classify(t,c));
@@ -158,11 +161,17 @@ function engine({store,config,ms}) {
         if(old?.manualDecision==='unmatched'){t.manualDecision='unmatched';t.status='manual';t.reason='Manuelle Aufhebung erhalten';continue;}
         let docs=candidates.get(t.id);
         const group=groups.find(g=>g.transactions.includes(t));
+        const paymentGroup=!old?.manualDecision&&docs.length===0&&!group?paymentGroups.find(g=>g.transaction.id===t.id&&!g.documents.some(d=>[...candidates].some(([tid,list])=>tid!==t.id&&list.some(x=>x.id===d.id)))):null;
+        const crossGroup=!old?.manualDecision&&!paymentGroup&&!group&&docs.length===0?crossGroups.find(g=>g.transactions.some(x=>x.id===t.id)&&!g.documents.some(d=>[...candidates].some(([tid,list])=>tid!==t.id&&list.some(x=>x.id===d.id)))):null;
+        if(crossGroup)docs=crossGroup.documents;
+        if(paymentGroup)docs=paymentGroup.documents;
         if(group)docs=group.documents;
         if(old?.manualDecision==='matched')docs=job.documents.filter(d=>old.receipts.some(r=>r.hash===d.hash));
         const shared=docs.some(d=>[...candidates].some(([tid,list])=>tid!==t.id&&list.some(x=>x.id===d.id)));
-        if((group||docs.length===1&&!shared)&&docs.length) {
+        if((group||paymentGroup||crossGroup||docs.length===1&&!shared)&&docs.length) {
           for(let i=0;i<docs.length;i++)await assign(job,t,docs[i],c,i>0);if(old?.manualDecision)t.manualDecision=old.manualDecision;
+          if(crossGroup){t.matchEvidence=crossGroup.evidence;t.reason=crossGroup.reason;for(const d of crossGroup.documents)d.crossVerified={transactionId:t.id,evidence:crossGroup.evidence};}
+          if(paymentGroup){t.matchEvidence=paymentGroup.evidence;t.reason='Rechnung und PayPal-Zahlungsnachweis: Referenz, Händler, Fremdwährungsbetrag, EUR-Abbuchung, Kontozuordnung und Zeitraum geprüft';paymentGroup.payment.linkedVerification={transactionId:t.id,invoiceDocumentId:paymentGroup.invoice.id};}
           if(group)t.reason='Referenzbasierte Teil-/Sammelzahlung, Gesamtsumme geprüft';
         } else if(docs.length) {t.status='manual';t.reason=shared?'Beleg passt zu mehreren Buchungen':'Mehrdeutige Belege';}
       }

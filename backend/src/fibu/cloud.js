@@ -39,7 +39,29 @@ function cloudWorker({store,worker,ms}){
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
-   for(const entry of entries.filter(d=>supported(d)&&d.name!==bank.name))await copyReceipt(entry,job.sourceMonthPath,folder);
+   const plan=[];let foldersRead=0;
+   async function collect(relative,destination,known,depth=0){
+    if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
+    if(++foldersRead>80)fail('Mehr als 80 Quellordner. Suche eingrenzen.');
+    const children=known||await ms.driveList(owner,job.companyId,relative);
+    for(const entry of children){
+     if(entry.folder&&depth>=8)fail('Belegsuche auf acht Ordnerebenen begrenzt. Suche eingrenzen.');
+     if(entry.folder&&depth<8&&!/^_(?:ASTRA_Originale|Vorversionen)|^Backup/i.test(entry.name)){cleanPath(entry.name);await collect((relative?relative+'/':'')+entry.name,destination,null,depth+1);}
+     else if(supported(entry)&&entry.name!==bank.name&&!/^(?:Sparkasse_\d{2}[._]|GK_|Pruefprotokoll)/i.test(entry.name)){plan.push({entry,relative,destination});if(plan.length>500)fail('Mehr als 500 Belege. Suche eingrenzen.');}
+    }
+   }
+   await collect(job.sourceMonthPath,folder,entries);
+   if(c.cloud.monthBasePath){
+    const date=new Date(month+'-01T12:00:00Z');
+    for(let back=1;back<=3;back++){
+     const d=new Date(date);d.setUTCMonth(d.getUTCMonth()-back);const relative=c.cloud.monthBasePath+'/'+d.getUTCFullYear()+'/'+String(d.getUTCMonth()+1).padStart(2,'0');
+     if(relative===job.sourceMonthPath)continue;
+     try{await collect(relative,local.collectionFolder);}catch(e){if(e.graphStatus===404){job.events.push({at:new Date().toISOString(),message:'Kein Belegordner für '+relative});}else throw e;}
+    }
+   }
+   downloadTotal+=Math.max(0,plan.length-(downloadTotal-1));
+   job.searchScope={lookbackMonths:3,foldersRead,plannedReceipts:plan.length};store.save(job);
+   for(const item of plan)await copyReceipt(item.entry,item.relative,item.destination);
    if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);downloadTotal+=collected.filter(supported).length;for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
    for(const imported of store.imports(owner,job.companyId)){
     const src=await inside(c.root,imported.path),bytes=await fs.readFile(src);await writeVerified(local.collectionFolder,path.basename(src),bytes);

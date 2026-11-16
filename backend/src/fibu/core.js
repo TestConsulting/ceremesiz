@@ -37,14 +37,24 @@ function classify(t, company) {
   }
   return { color: null, rule: null };
 }
+function partyKey(value){const key=norm(value);if(/rciallemagne|rcibanque|mobilizefinancialservices/.test(key))return 'rcimobilize';if(/^cbrettschneidergmbh(?:kartonagenfabrik)?$/.test(key))return 'cbrettschneider';return key.replace(/^steuerberater/,'').replace(/(?:partnerschaftmbb|gmbhundcokg|gmbhcokg|gmbh|ag|se)$/,'');}
+function referenceMatches(t,d){
+ if(!d.invoice)return false;
+ if(d.direction==='outgoing'){if(t.amount<=0||partyKey(t.counterparty)!==partyKey(d.customer))return false;}
+ else if(d.invoice.length<5)return false;
+ return new RegExp('(^|[^A-Z0-9])'+d.invoice.split('').map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[ \\t]*')+(d.layout==='remittance-advice'?'(?=Supplier\\b|[^A-Z0-9]|$)':'([^A-Z0-9]|$)'),'i').test(t.description);
+}
+function canonicalDocuments(docs){const seen=new Map(),result=[];for(const d of docs){const key=d.text?.normalize('NFKC').replace(/\s+/g,'');if(key&&seen.has(key)){d.duplicateOf=seen.get(key).id;continue;}if(key)seen.set(key,d);result.push(d);}return result;}
 function match(t, docs) {
-  const refs = (t.description.toUpperCase().match(/[A-Z0-9][A-Z0-9-]{5,}/g) || []).filter(s => /\d/.test(s));
-  return docs.filter(d => d.verified && !d.requiresReview && d.amounts.length===1 && d.amounts.some(a => Math.abs(a - Math.abs(t.amount)) < .005) &&
-    (refs.some(r => d.text.toUpperCase().includes(r)) || (norm(t.counterparty).length >= 5 && norm(d.supplier) === norm(t.counterparty))));
+ const eligible=docs.filter(d=>d.verified&&!d.requiresReview&&d.amounts.length===1&&Math.abs(d.amounts[0]-Math.abs(t.amount))<.005&&(d.direction!=='outgoing'||t.amount>0)&&(!d.recurringPeriod||t.date>=d.recurringPeriod.from&&t.date<=d.recurringPeriod.to&&/miete|monatlich|dauerauftrag/i.test(t.description)));
+ const exact=eligible.filter(d=>referenceMatches(t,d));if(exact.length)return exact;
+ const corroborated=eligible.filter(d=>(d.referenceEvidence&&partyKey(d.supplier)===partyKey(t.counterparty)&&t.description.includes(d.referenceEvidence.reference)&&t.description.replace(/\s/g,'').includes(d.referenceEvidence.mandate))||(d.cardEvidence&&/KARTENZAHLUNG/.test(t.description)&&t.description.includes(d.cardEvidence.timestamp)));if(corroborated.length)return corroborated;
+ const refs=(t.description.toUpperCase().match(/[A-Z0-9][A-Z0-9-]{5,}/g)||[]).filter(s=>/\d/.test(s));
+ return eligible.filter(d=>d.direction!=='outgoing'&&(refs.some(r=>d.text.toUpperCase().includes(r))||(norm(t.counterparty).length>=5&&norm(d.supplier)===norm(t.counterparty))));
 }
 function allocations(txs,docs) {
   const groups=[];
-  const references=(t,d)=>d.invoice&&d.invoice.length>=5&&new RegExp('(^|[^A-Z0-9])'+d.invoice.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^A-Z0-9]|$)','i').test(t.description);
+  const references=referenceMatches;
   for(const d of docs.filter(d=>d.verified&&!d.requiresReview&&d.amounts.length===1)) {
     const ts=txs.filter(t=>references(t,d));
     if(ts.length>1&&ts.every(t=>Math.sign(t.amount)===Math.sign(ts[0].amount))&&Math.abs(ts.reduce((s,t)=>s+Math.abs(t.amount),0)-d.amounts[0])<.005)groups.push({transactions:ts,documents:[d]});
@@ -74,4 +84,4 @@ async function writeVerified(folder, name, bytes) {
   }
   fail('Zu viele Dateinamenskollisionen.');
 }
-module.exports = { hash, norm, fail, monthFromFolder, inside, classify, match, allocations, astraName, writeVerified };
+module.exports = { hash, norm, fail, monthFromFolder, inside, classify, match, allocations, canonicalDocuments, partyKey, astraName, writeVerified };

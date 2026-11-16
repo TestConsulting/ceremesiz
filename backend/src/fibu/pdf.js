@@ -56,7 +56,7 @@ function receiptMetadata(extracted, config) {
   const companies = ['TestConsulting CC GmbH', 'AC Immo Invest GmbH', 'Ceremesiz Holding'];
   const found = companies.filter(c => norm(text).includes(norm(c)));
   const verified = found.length === 1 && norm(found[0]) === norm(config.documentCompanyName);
-  const totals = [...text.matchAll(/(?:Gesamtbetrag|Bruttobetrag|Rechnungsbetrag|Total)\s*:?\s*(EUR\s*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})\s*(EUR|€|USD|GBP)?/ig)]
+  const totals = [...text.matchAll(/(?:Gesamtbetrag(?:[ \t]+brutto)?|Bruttobetrag|Rechnungsbetrag(?:[ \t]*\(Brutto\))?|Gesamtsumme|Zu zahlender Betrag|Total)[ \t]*:?[ \t]*(?:(EUR|€)[ \t]*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})[ \t]*(EUR|€|USD|GBP)?/ig)]
     .filter(m=>(m[1]||/^(EUR|€)$/i.test(m[3]||''))&&!/USD|GBP/i.test(m[3]||'')).map(m=>money(m[2]));
   const microsoftInvoice=/Microsoft Ireland Operations Ltd/.test(text)&&/Rechnungsnummer\s*:/i.test(text);
   // Microsoft's German invoice separates the EUR header amount from "Summe:".
@@ -66,11 +66,13 @@ function receiptMetadata(extracted, config) {
     for(const m of text.matchAll(/\bSumme\s*:\s*((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})/gi))if(euroLines.includes(money(m[1])))totals.push(money(m[1]));
   }
   const supplier = text.match(/(?:Lieferant|Rechnungssteller)\s*:\s*([^\n]+)/i)?.[1] || (microsoftInvoice?'Microsoft':'');
-  const invoice = text.match(/(?:Rechnungsnummer|Rechnung\s*Nr\.?|Invoice\s*No\.?)\s*:?\s*([A-Z0-9-]+)/i)?.[1] || '';
+  const invoice = text.match(/^(?:Rechnungs?(?:[- \t]*(?:nummer|Nr\.?)))[ \t]*:?[ \t]*([A-Z0-9][A-Z0-9/.-]*\d[A-Z0-9/.-]*)/im)?.[1] || text.match(/\bInvoice[ \t]+(?:number|No\.?)[ \t]*:[ \t]*([A-Z0-9][A-Z0-9/.-]*)/i)?.[1] || '';
   const date = text.match(/Rechnungsdatum\s*:?\s*(\d{2}[./]\d{2}[./]\d{4})/i)?.[1] || '';
   const amounts=[...new Set(totals)];
-  return { text, verified, amounts, supplier, invoice, invoiceDate: date,
-    reason: !verified ? 'Firma nicht eindeutig verifiziert' : !amounts.length ? 'Bruttobetrag nicht eindeutig auslesbar' : amounts.length>1?'Mehrere widersprüchliche Bruttobeträge':null };
+  const layout=require('./invoice-layouts').outgoing(text,config);
+  const evidence=require('./payment-evidence').metadata(text);
+  const result={text,verified,amounts,supplier,invoice,invoiceDate:date,...require('./invoice-layouts').extra(text),...(layout||{}),...(evidence?{evidence}:{})};
+  result.reason=!verified?'Firma nicht eindeutig verifiziert':!result.amounts.length?'Bruttobetrag nicht eindeutig auslesbar':result.amounts.length>1?'Mehrere widersprüchliche Bruttobeträge':null;return result;
 }
 async function annotate(original, txs) {
   const { PDFDocument, rgb, BlendMode } = await import('../../vendor/pdf-lib.mjs');
@@ -86,7 +88,7 @@ async function annotate(original, txs) {
 }
 async function extractReceipt(bytes,isPdf=true,{ocr=false}={}) {
   const extracted=isPdf?await extract(bytes):{text:'',pages:[]};
-  if(ocr&&(!isPdf||extracted.text.replace(/\s/g,'').length<40)) {
+  if(ocr&&(!isPdf||extracted.text.replace(/\s/g,'').length<40||extracted.pages[0]?.lines.map(l=>l.text).join('').replace(/\s/g,'').length<40)) {
     const recognized=await require('./ocr').recognize(bytes,isPdf);
     return {...extracted,text:recognized.text,ocr:recognized};
   }
