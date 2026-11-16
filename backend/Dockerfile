@@ -7,6 +7,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 FROM node:22-bookworm-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4000 \
