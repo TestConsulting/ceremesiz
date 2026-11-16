@@ -2,5 +2,4 @@
 **/node_modules
 backend/data
 backend/.env
-backend/test
 index_old.html
