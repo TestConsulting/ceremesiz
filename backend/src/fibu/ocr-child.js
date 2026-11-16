@@ -1,9 +1,7 @@
 // Separate, bounded process: no documents leave this machine.
 const {createWorker}=require('tesseract.js');
-const path=require('node:path');
-const fs=require('node:fs/promises');
 process.once('message',async message=>{
- let worker,modelFolder;
+ let worker;
  try{
   const bytes=Buffer.from(message.data,'base64'),images=[];
   const {createCanvas,loadImage}=require('@napi-rs/canvas');
@@ -27,13 +25,11 @@ process.once('message',async message=>{
    images.push(bytes);
   }
   // Both language models ship as dependencies. No model downloads at runtime.
-  modelFolder=await fs.mkdtemp(path.join(require('node:os').tmpdir(),'astra-ocr-models-'));
-  for(const lang of ['deu','eng'])await fs.copyFile(path.join(require('@tesseract.js-data/'+lang).langPath,lang+'.traineddata.gz'),path.join(modelFolder,lang+'.traineddata.gz'));
-  worker=await createWorker('deu+eng',1,{langPath:modelFolder,cacheMethod:'none',gzip:true});
+  worker=await createWorker('deu+eng',1,{langPath:message.modelFolder,cacheMethod:'none',gzip:true});
   await worker.setParameters({user_defined_dpi:'144'});
   const pages=[];
   for(const image of images){const {data}=await worker.recognize(image);pages.push({text:data.text,confidence:data.confidence});}
   process.send({ok:true,text:pages.map(p=>p.text).join('\n'),pages,confidence:Math.min(...pages.map(p=>p.confidence))});
  }catch(e){process.send({ok:false,error:e.message});}
- finally{if(worker)await worker.terminate();if(modelFolder)await fs.rm(modelFolder,{recursive:true,force:true});process.disconnect();}
+ finally{if(worker)await worker.terminate();process.disconnect();}
 });
