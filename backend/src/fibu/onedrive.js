@@ -11,6 +11,16 @@ function oneDrive({graph,config}){
   return 'me/drive/root:/'+(root+(rel?'/'+rel:'')).split('/').map(encodeURIComponent).join('/');
  };
  return {
+  async ensureBackupFolder(owner,company,parent){
+   cleanPath(parent,{empty:true});const relative=(parent?parent+'/':'')+'_ASTRA_Originale';
+   try{const item=await graph(owner,company,route(company,relative));if(!item.folder||item.remoteItem)fail('Originalsicherung ist kein Ordner.');return relative;}catch(e){if(e.graphStatus!==404)throw e;}
+   const folder=await graph(owner,company,route(company,parent));if(!folder.folder||folder.remoteItem)fail('Zielordner nicht freigegeben.');
+   await graph(owner,company,route(company,parent)+':/children',{method:'POST',body:JSON.stringify({name:'_ASTRA_Originale',folder:{},'@microsoft.graph.conflictBehavior':'fail'})});return relative;
+  },
+  async putPdf(owner,company,relative,bytes,expectedEtag){
+   cleanPath(relative);if(!/\.pdf$/i.test(relative)||bytes.length>25*1024*1024||bytes.subarray(0,5).toString()!=='%PDF-')fail('Nur verifizierte PDF-Ausgaben bis 25 MB schreiben.');
+   return graph(owner,company,route(company,relative)+':/content'+(expectedEtag?'':'?@microsoft.graph.conflictBehavior=fail'),{method:'PUT',headers:{'Content-Type':'application/pdf',...(expectedEtag?{'If-Match':expectedEtag}:{})},body:bytes});
+  },
   async folder(owner,company,relative=''){
    const item=await graph(owner,company,route(company,relative));
    if(!item.folder||item.remoteItem)fail('OneDrive-Ordner nicht verfügbar.',400);

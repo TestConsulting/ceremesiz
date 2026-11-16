@@ -2,7 +2,7 @@ const {fail}=require('./core');
 const fetchJson=async(url,options={})=>{
   const r=await fetch(url,{...options,signal:AbortSignal.timeout(30000),redirect:'error'});
   const data=await r.json();
-  if(!r.ok) throw Object.assign(new Error('Microsoft-Anfrage fehlgeschlagen ('+r.status+'). Anmeldung/Berechtigung prüfen.'),{status:502,oauthCode:data.error});
+  if(!r.ok) throw Object.assign(new Error('Microsoft-Anfrage fehlgeschlagen ('+r.status+'). Anmeldung/Berechtigung prüfen.'),{status:502,oauthCode:data.error,graphStatus:r.status});
   return data;
 };
 function microsoft(config,{vault=null}={}) {
@@ -29,7 +29,10 @@ function microsoft(config,{vault=null}={}) {
     if(url.origin!=='https://graph.microsoft.com'||!url.pathname.startsWith('/v1.0/')) fail('Ungültiges Microsoft-Ziel.');
     return fetchJson(url,{...options,headers:{Authorization:'Bearer '+await token(owner,company),Prefer:'IdType="ImmutableId"','Content-Type':'application/json',...options.headers}});
   }
+  const canWrite=(o,c)=>(session(o,c)?.scope||'').split(/\s+/).some(s=>/^Files\.ReadWrite$/i.test(s));
+  const bankSync=require('./bank-sync').bankSync(require('./onedrive').oneDrive({graph,config}),canWrite);
   return {
+    canWrite,bankSource:bankSync.source,publishBank:bankSync.publish,
     configured:!!authority,
     connected:(o,c)=>!!session(o,c)?.access_token,
     disconnect:(o,c)=>{sessions.delete(key(o,c));vault?.delete(o,c);},
@@ -38,7 +41,7 @@ function microsoft(config,{vault=null}={}) {
     driveDownload:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).download(o,c,p),
     async begin(o,c) {
       if(!authority) fail('Microsoft-App ist nicht konfiguriert.',503);
-      const t=await fetchJson(authority+'/devicecode',form({client_id:m.clientId,scope:'offline_access User.Read Mail.ReadWrite.Shared'+(config.mode==='cloud'?' Files.Read':'')}));
+      const t=await fetchJson(authority+'/devicecode',form({client_id:m.clientId,scope:'offline_access User.Read Mail.ReadWrite.Shared'+(config.mode==='cloud'?' Files.ReadWrite':'')}));
       sessions.set(key(o,c),{...t,nextPoll:Date.now()+t.interval*1000,expiresAt:Date.now()+t.expires_in*1000});
       return {userCode:t.user_code,verificationUri:t.verification_uri,expiresIn:t.expires_in,interval:t.interval};
     },

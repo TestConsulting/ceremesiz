@@ -1,12 +1,14 @@
 const fs=require('node:fs/promises'),path=require('node:path');
 const {inside,writeVerified,fail}=require('./core');
 const {cleanPath}=require('./onedrive');
+const {advance}=require('./progress');
 function cloudWorker({store,worker,ms}){
  const running=new Set();
  async function run(id,owner,c){
   if(running.has(id))return;running.add(id);
   let job=store.get(owner,id);
   try{
+   advance(job,store,'download');
    job.state='running';job.progress='OneDrive-Dateien werden direkt auf dem Server geladen.';store.save(job);
    if(!ms.connected(owner,job.companyId))fail('Microsoft für OneDrive und E-Post verbinden.',409);
    cleanPath(job.sourceMonthPath,{empty:true});const month=job.month;if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))fail('Gültigen Prüfmonat wählen.',400);
@@ -21,13 +23,15 @@ function cloudWorker({store,worker,ms}){
    const bankFolder=path.posix.dirname(bankPath)==='.'?'':path.posix.dirname(bankPath);
    const bankEntries=bankFolder===job.sourceMonthPath?entries:await ms.driveList(owner,job.companyId,bankFolder);
    const bank=bankEntries.find(d=>d.file&&d.name===path.posix.basename(bankPath));if(!bank)fail('Bank-PDF fehlt im gewählten OneDrive-Ordner.');
-   const snapshots=[];let total=0;
+   const snapshots=[];let total=0,downloaded=0;const downloadTotal=entries.filter(d=>d.file).length+1;
    async function copy(entry,relative,destination){
     if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
     if(/[\\/\x00-\x1f]/.test(entry.name)||entry.name==='.'||entry.name==='..')fail('Ungültiger OneDrive-Dateiname.');
     total+=entry.size;if(total>100*1024*1024)fail('OneDrive-Quellen über 100 MB. Monat/Sammelordner eingrenzen.');
+    advance(job,store,'download',downloaded++,downloadTotal);
     const sourcePath=(relative?relative+'/':'')+entry.name;
-    const {bytes,source}=await ms.driveDownload(owner,job.companyId,sourcePath);
+    let {bytes,source}=await ms.driveDownload(owner,job.companyId,sourcePath);
+    if(entry===bank&&ms.bankSource)bytes=await ms.bankSource(job,sourcePath,bytes,source,store);
     const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:sourcePath});return saved;
    }
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);

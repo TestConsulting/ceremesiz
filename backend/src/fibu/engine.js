@@ -2,6 +2,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {hash,inside,fail,monthFromFolder,classify,match,allocations,astraName,writeVerified}=require('./core');
 const pdf=require('./pdf');
+const {advance}=require('./progress');
 function engine({store,config,ms}) {
   const running=new Set(),extractions=new Map();
   function extractReceipt(bytes,isPdf,c){
@@ -41,7 +42,9 @@ function engine({store,config,ms}) {
       const refs=(t.description.match(/\b[A-Z0-9-]{5,80}\b/gi)||[]).filter(r=>/\d/.test(r));
       for(const ref of refs)try{messages.push(...await ms.search(job.owner,job.companyId,mailbox,ref));}catch(e){job.issues.push('Historische Hays-Suche: '+e.message);}
     }
-    for(const message of [...new Map(messages.map(m=>[m.id,m])).values()]) {
+    const uniqueMessages=[...new Map(messages.map(m=>[m.id,m])).values()];let mailDone=0;
+    for(const message of uniqueMessages) {
+      advance(job,store,'mail',mailDone++,uniqueMessages.length);
       checkpoint(job);
       const previous=store.mail(job.owner,job.companyId,message.id);
       if(previous?.completed) {
@@ -89,6 +92,7 @@ function engine({store,config,ms}) {
     }
   }
   async function exportResult(job,c) {
+    advance(job,store,'export');
     const folder=await inside(c.root,job.monthFolderPath,'directory');
     const bank=await inside(folder,job.bankPdfPath),bytes=await fs.readFile(bank);
     if(hash(bytes)!==job.bankHash) fail('Originalbank wurde seit dem Start verändert. Neue Revision erforderlich.');
@@ -96,6 +100,7 @@ function engine({store,config,ms}) {
     const reopened=await pdf.extract(output),original=await pdf.extract(bytes);
     if(reopened.pages.length!==original.pages.length||reopened.text!==original.text)fail('PDF-Prüfung: Text oder Seitenzahl verändert.');
     job.markedPdfPath=await writeVerified(folder,astraName(path.basename(bank)),output);
+    if(job.execution==='server'&&ms.publishBank){try{await ms.publishBank(job,c,store);}catch(e){job.issues.push('OneDrive-PDF konnte nicht aktualisiert werden: '+(e.status?e.message:'Verbindung prüfen.'));}}
     job.lastSuccessfulCheck=new Date().toISOString();
     job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
     job.events.push({at:job.lastSuccessfulCheck,message:'Markierte PDF gespeichert und Text/Seitenzahl verifiziert; Ergebnis: '+job.state});
@@ -121,10 +126,11 @@ function engine({store,config,ms}) {
       if(previous&&previous.bankHash!==job.bankHash)job.issues.push('Neue Bankrevision: frühere Zuordnungen bleiben in der Historie, Koordinaten müssen neu geprüft werden.');
       const collection=await inside(c.root,c.collectionFolder,'directory');
       event(job,'Bankkonto und Auszugszeitraum geprüft.');
+      advance(job,store,'mail');
       try {await importMail(job,c,collection);}catch(e){job.issues.push('E-Post-Teilfehler: '+e.message);}
-      for(const folder of new Set([job.monthFolderPath,collection])) {
-        const entries=await fs.readdir(folder,{withFileTypes:true});
-        for(const entry of entries) {
+      const scan=[];for(const folder of new Set([job.monthFolderPath,collection]))for(const entry of await fs.readdir(folder,{withFileTypes:true}))scan.push({folder,entry});
+      let scanned=0;for(const {folder,entry} of scan) {
+          advance(job,store,'documents',scanned++,scan.length);
           checkpoint(job);
           if(!entry.isFile()||! /\.(pdf|jpe?g|png)$/i.test(entry.name)||/ASTRA_Pruefbericht/i.test(entry.name)||entry.name.startsWith(path.parse(job.bankPdfPath).name+'_Astra'))continue;
           const file=await inside(c.root,path.join(folder,entry.name));
@@ -137,7 +143,6 @@ function engine({store,config,ms}) {
             if(!job.documents.some(x=>x.hash===d.hash))job.documents.push(d);
           }catch(e){job.issues.push(entry.name+': '+e.message);}
         }
-      }
       // Include previously verified receipt paths, which now bear _Astra and are excluded from fresh scans.
       if(previous?.bankHash===job.bankHash) for(const old of previous.transactions||[]) for(const r of old.receipts||[]) {
           try {const file=await inside(c.root,r.path);if(hash(await fs.readFile(file))===r.hash&&!job.documents.some(d=>d.hash===r.hash)){const d=await document(file,c,{source:'previous'});job.documents.push(require('./review').applyReview(d,store.documentReview(owner,job.companyId,d.hash),c));}}
@@ -145,7 +150,8 @@ function engine({store,config,ms}) {
       }
       const candidates=new Map(job.transactions.map(t=>[t.id,match(t,job.documents)]));
       const groups=allocations(job.transactions,job.documents);
-      for(const t of job.transactions) {
+      let matched=0;for(const t of job.transactions) {
+        advance(job,store,'match',matched++,job.transactions.length);
         checkpoint(job);Object.assign(t,classify(t,c));
         if(t.color==='purple'){t.status='not_required';continue;}
         const old=previous?.bankHash===job.bankHash&&previous.transactions?.find(x=>x.id===t.id);
@@ -162,6 +168,7 @@ function engine({store,config,ms}) {
       }
       event(job,'Zuordnungen geprüft; markierte Kopie wird gespeichert.');checkpoint(job);
       await exportResult(job,c);
+      advance(job,store,'done');
       job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
       event(job,'Prüflauf beendet. Monatsabschluss erfordert eine eigene Freigabe.');store.save(job);
     }catch(e){job.issues.push(e.status||e.cancelled?e.message:'Verarbeitung fehlgeschlagen; Dateizugriff oder PDF prüfen.');job.progress=e.cancelled?'Abgebrochen':'Prüfung angehalten';store.save(job,e.cancelled?'cancelled':e.status===422?'waiting_for_user':'failed');}

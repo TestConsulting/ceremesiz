@@ -23,6 +23,7 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  assert.equal(result.execution,'server');assert.equal(result.state,'completed');assert.equal(result.transactions[0].status,'matched');assert.ok(result.markedPdfPath);assert.equal(result.sourceMonthPath,'Belege/Oktober');
  const original=Buffer.from(await(await api('/jobs/'+job.id+'/files/original')).arrayBuffer());assert.deepEqual(original,bank);
  assert.ok(result.cloudSources.some(s=>s.path==='Bankarchiv/2026/10/Bank.pdf'));
+ assert.equal(result.workProgress.percent,100);assert.equal(result.workProgress.stage,'done');assert.ok(result.workProgress.startedAt);
  assert.equal((await api('/jobs/'+job.id+'/month',{action:'close'})).status,409);
  const rootParams={...params,monthFolderPath:'',bankPdfPath:'Bank.pdf',bankDrivePath:true};
  assert.equal((await api('/months',rootParams)).status,200);

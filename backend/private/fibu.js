@@ -8,6 +8,13 @@ async function fibuApi(url,body) {
 function fibuTime(s){return s?new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',dateStyle:'medium',timeStyle:'short'}).format(new Date(s)):'–';}
 function fibuLabel(s){return ({queued:'Wartet auf Ausführung',running:'Prüfung läuft',waiting_for_user:'Prüfung benötigt Klärung',completed:'Prüfung beendet',partial:'Teilweise geprüft',failed:'Prüfung fehlgeschlagen',cancelled:'Abgebrochen',missing:'Beleg fehlt',manual:'Manuelle Zuordnung',matched:'Beleg zugeordnet',not_required:'Kein Beleg notwendig'})[s]||s;}
 function fibuMonth(s){return s.replace(/[\\/]+$/,'').match(/(?:^|[\\/])(20\d{2})[\\/](0[1-9]|1[0-2])$/)?.slice(1).join('-')||'Jahr/Monat noch nicht erkannt';}
+function fibuProgress(job){
+ const p=job?.workProgress;if(!p)return '';const active=['queued','running'].includes(job.state),elapsed=Math.max(0,((active?Date.now():Date.parse(p.updatedAt))-Date.parse(p.startedAt))/1000),percent=p.percent||0;
+ const duration=s=>s<60?Math.ceil(s)+' Sek.':Math.ceil(s/60)+' Min.';
+ const remaining=percent>2&&elapsed>15?elapsed*(100-percent)/percent:null;
+ const estimate=active?(remaining===null?'Restzeit wird ermittelt':'Restzeit grob '+duration(remaining*.7)+'–'+duration(remaining*1.5)+' · Schätzung, abhängig von OCR und Verbindung'):(percent===100?'Verarbeitung beendet':'Verarbeitung angehalten');
+ return '<div class="f-job-progress" style="margin:12px 0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>'+esc(p.label)+(p.total?' · '+p.done+'/'+p.total:'')+'</strong><span>'+percent+' %</span></div><progress aria-label="Fortschritt des Prüflaufs" max="100" value="'+percent+'" style="width:100%;height:12px;accent-color:#00853f"></progress><small style="display:block;margin-top:5px;color:#74828a">'+estimate+' · Bisher '+duration(elapsed)+'</small></div>';
+}
 async function viewFibu(company,selectedMonth=null) {
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
   $('#main').innerHTML=head(company,'Finanzbuchhaltung','FiBu '+(selectedMonth?selectedMonth.slice(5)+'/'+selectedMonth.slice(0,4):''),'<button class="btn" id="fibuBack">← FiBu-Monate</button>')+`<style>
@@ -36,12 +43,13 @@ async function viewFibu(company,selectedMonth=null) {
     current=job;form.folder.value=job.sourceMonthPath||job.monthFolderPath;form.bank.value=job.sourceBankName||job.bankPdfPath;$('#fibuMonth').textContent=job.month;
     const active=['queued','running'].includes(job.state),txs=job.transactions||[];
     $('#fibuPlay').disabled=active;
-    $('#fibuStatus').innerHTML=`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p><p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
+    $('#fibuStatus').innerHTML=`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p>${fibuProgress(job)}<p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
       <p>${txs.filter(t=>t.status==='matched').length} zugeordnet · ${txs.filter(t=>t.status==='missing').length} Beleg fehlt · ${txs.filter(t=>t.status==='manual').length} manuell · ${txs.filter(t=>t.status==='not_required').length} kein Beleg notwendig</p>
       ${active?'<button id="fibuCancel">Lauf abbrechen</button>':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
       ${job.issues?.length?`<ul>${job.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:''}`;
     const base='/api/fibu/jobs/'+encodeURIComponent(job.id)+'/files/';
     $('#fibuResult').innerHTML=`<section class="panel fibu-status"><a href="${base}original" target="_blank" rel="noopener">Originalbank öffnen</a>
+      ${job.cloudPublished?.verified&&job.cloudPublished.webUrl?` · <a href="${esc(job.cloudPublished.webUrl)}" target="_blank" rel="noopener">Aktualisierte OneDrive-PDF ↗</a>`:''}
       ${job.markedPdfPath?` · <a href="${base}marked" target="_blank" rel="noopener">Markierte PDF öffnen</a>`:''}
       ${job.reportPath?` · <a href="${base}report" target="_blank" rel="noopener">Prüfbericht</a>`:''}
       <p><label>Filter <select id="fibuFilter"><option value="all">Alle Buchungen</option><option value="missing">Beleg fehlt (auch grün)</option><option value="manual">Manuelle Zuordnung</option><option value="matched">Beleg zugeordnet</option><option value="not_required">Kein Beleg notwendig</option></select></label></p></section>

@@ -32,7 +32,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     let enabled=false,canConnect=false;try{companyFor(config,req.user,id);enabled=true;}catch{}
     try{companyFor(config,req.user,id,{allowDisabled:true});canConnect=true;}catch{}
     const seen=canConnect?db.prepare('SELECT seen FROM fibu_runner_state WHERE company=?').get(id)?.seen:null;
-    return {id,name,enabled,canConnect,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,connected:canConnect&&ms.connected(req.user.id,id)};
+    return {id,name,enabled,canConnect,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,canWrite:canConnect&&!!ms.canWrite?.(req.user.id,id),connected:canConnect&&ms.connected(req.user.id,id)};
   })}));
   router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);res.json({months:store.folders(req.user.id,req.query.companyId).filter(m=>config.mode!=='cloud'||m.storageMode==='cloud')});});
   router.post('/months',...write,async(req,res)=>{
