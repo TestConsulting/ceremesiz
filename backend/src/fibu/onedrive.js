@@ -24,8 +24,13 @@ function oneDrive({graph,config}){
    const host=url.hostname;
    if(url.protocol!=='https:'||url.username||url.password||url.port||!['sharepoint.com','sharepoint-df.com','1drv.com','onedrive.com'].some(d=>host.endsWith('.'+d)))fail('Unerwartetes OneDrive-Downloadziel.');
    // Pre-authenticated content URL: never forward the Graph bearer token.
-   const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(60000)});
-   if(!response.ok)fail('OneDrive-Download fehlgeschlagen. Erneut prüfen.');
+   let response;
+   for(let attempt=0;attempt<3;attempt++){
+    response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(60000)});
+    if(response.ok)break;
+    if(![429,500,502,503,504].includes(response.status)||attempt===2)fail('OneDrive-Download fehlgeschlagen (HTTP '+response.status+'). Datei manuell prüfen.');
+    const retry=Number(response.headers.get('retry-after'))||2**(attempt+1);await response.body?.cancel();await new Promise(r=>setTimeout(r,Math.min(30,Math.max(1,retry))*1000));
+   }
    const parts=[];let length=0;
    for await(const chunk of response.body){length+=chunk.length;if(length>25*1024*1024){await response.body.cancel().catch(()=>{});fail('OneDrive-Datei über 25 MB.');}parts.push(Buffer.from(chunk));}
    const bytes=Buffer.concat(parts),after=await graph(owner,company,route(company,relative));

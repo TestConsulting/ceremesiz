@@ -26,11 +26,12 @@ function cloudWorker({store,worker,ms}){
     const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:relative+'/'+entry.name});return saved;
    }
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,job.sourceMonthPath,folder);
-   const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
+   const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
+   async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
    const markedBankPrefix=path.parse(bank.name).name+'_Astra';
    const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!d.name.toLowerCase().startsWith(markedBankPrefix.toLowerCase())&&!/ASTRA_Pruefbericht/i.test(d.name);
-   for(const entry of entries.filter(d=>supported(d)&&d.name!==bank.name))await copy(entry,job.sourceMonthPath,folder);
-   if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);for(const entry of collected.filter(supported))await copy(entry,c.cloud.collectionPath,local.collectionFolder);}
+   for(const entry of entries.filter(d=>supported(d)&&d.name!==bank.name))await copyReceipt(entry,job.sourceMonthPath,folder);
+   if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
    for(const imported of store.imports(owner,job.companyId)){
     const src=await inside(c.root,imported.path),bytes=await fs.readFile(src);await writeVerified(local.collectionFolder,path.basename(src),bytes);
    }
