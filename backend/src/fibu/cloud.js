@@ -23,7 +23,9 @@ function cloudWorker({store,worker,ms}){
    const bankFolder=path.posix.dirname(bankPath)==='.'?'':path.posix.dirname(bankPath);
    const bankEntries=bankFolder===job.sourceMonthPath?entries:await ms.driveList(owner,job.companyId,bankFolder);
    const bank=bankEntries.find(d=>d.file&&d.name===path.posix.basename(bankPath));if(!bank)fail('Bank-PDF fehlt im gewählten OneDrive-Ordner.');
-   const snapshots=[];let total=0,downloaded=0;const downloadTotal=entries.filter(d=>d.file).length+1;
+   const markedBankPrefix=path.parse(bank.name).name+'_Astra';
+   const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!d.name.toLowerCase().startsWith(markedBankPrefix.toLowerCase())&&!/ASTRA_Pruefbericht/i.test(d.name);
+   const snapshots=[];let total=0,downloaded=0,downloadTotal=entries.filter(d=>supported(d)&&d.name!==bank.name).length+1;
    async function copy(entry,relative,destination){
     if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
     if(/[\\/\x00-\x1f]/.test(entry.name)||entry.name==='.'||entry.name==='..')fail('Ungültiger OneDrive-Dateiname.');
@@ -37,10 +39,8 @@ function cloudWorker({store,worker,ms}){
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
-   const markedBankPrefix=path.parse(bank.name).name+'_Astra';
-   const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!d.name.toLowerCase().startsWith(markedBankPrefix.toLowerCase())&&!/ASTRA_Pruefbericht/i.test(d.name);
    for(const entry of entries.filter(d=>supported(d)&&d.name!==bank.name))await copyReceipt(entry,job.sourceMonthPath,folder);
-   if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
+   if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);downloadTotal+=collected.filter(supported).length;for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
    for(const imported of store.imports(owner,job.companyId)){
     const src=await inside(c.root,imported.path),bytes=await fs.readFile(src);await writeVerified(local.collectionFolder,path.basename(src),bytes);
    }
