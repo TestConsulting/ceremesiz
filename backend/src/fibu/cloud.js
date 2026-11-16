@@ -27,7 +27,8 @@ function cloudWorker({store,worker,ms}){
    }
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,job.sourceMonthPath,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
-   const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!/_Astra(?:_|\.)|ASTRA_Pruefbericht/i.test(d.name);
+   const markedBankPrefix=path.parse(bank.name).name+'_Astra';
+   const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!d.name.toLowerCase().startsWith(markedBankPrefix.toLowerCase())&&!/ASTRA_Pruefbericht/i.test(d.name);
    for(const entry of entries.filter(d=>supported(d)&&d.name!==bank.name))await copy(entry,job.sourceMonthPath,folder);
    if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);for(const entry of collected.filter(supported))await copy(entry,c.cloud.collectionPath,local.collectionFolder);}
    for(const imported of store.imports(owner,job.companyId)){
