@@ -55,6 +55,7 @@ function createStore(db) {
     adopt:job=>db.prepare('INSERT INTO fibu_jobs VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,payload=excluded.payload,updated=excluded.updated').run(job.id,job.owner,job.companyId,job.month,job.state,JSON.stringify(job),job.created||new Date().toISOString(),new Date().toISOString()),
     list:(owner,company)=>db.prepare('SELECT id FROM fibu_jobs WHERE owner=? AND company=? ORDER BY created DESC LIMIT 50').all(owner,company).map(r=>get(owner,r.id)),
     mail:(owner,company,message)=>{const r=db.prepare('SELECT payload FROM fibu_mail WHERE owner=? AND company=? AND message=?').get(owner,company,message);return r?JSON.parse(r.payload):null;},
+    mailFile:(owner,company,digest)=>{for(const row of db.prepare('SELECT payload FROM fibu_mail WHERE owner=? AND company=?').all(owner,company)){const file=JSON.parse(row.payload).files?.find(f=>f.hash===digest);if(file)return file;}return null;},
     putMail:(owner,company,message,payload)=>db.prepare('INSERT INTO fibu_mail VALUES(?,?,?,?) ON CONFLICT(owner,company,message) DO UPDATE SET payload=excluded.payload').run(owner,company,message,JSON.stringify(payload)),
     relocateMail:(owner,company,digest,newPath)=>{
       for(const row of db.prepare('SELECT message,payload FROM fibu_mail WHERE owner=? AND company=?').all(owner,company)) {

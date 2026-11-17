@@ -46,12 +46,6 @@ function engine({store,config,ms}) {
     for(const message of uniqueMessages) {
       advance(job,store,'mail',mailDone++,uniqueMessages.length);
       checkpoint(job);
-      const previous=store.mail(job.owner,job.companyId,message.id);
-      if(previous?.completed) {
-        let valid=true;
-        for(const d of previous.files) try { const file=await inside(c.root,d.path); if(hash(await fs.readFile(file))!==d.hash)valid=false; }catch{valid=false;}
-        if(valid)continue;
-      }
       const files=[],issues=[],attachments=await ms.attachments(job.owner,job.companyId,mailbox,message.id);
       let relevant=0;
       for(const a of attachments) {
@@ -66,16 +60,17 @@ function engine({store,config,ms}) {
           if(!isPdf&&!c.ocrEnabled)fail('Bildanhang benötigt OCR/manuelle Firmenprüfung; Nachricht bleibt offen.');
           if(isPdf&&bytes.subarray(0,5).toString()!=='%PDF-') fail('PDF-Signatur ungültig.');
           const extracted=await extractReceipt(bytes,isPdf,c);
-          const meta=pdf.receiptMetadata(extracted,c);
+          const meta=require('./review').applyReview(pdf.receiptMetadata(extracted,c),store.documentReview(job.owner,job.companyId,hash(bytes)),c);
           if(!meta.verified) fail('Firma im Anhang nicht eindeutig verifiziert; keine automatische Ablage.');
           const safe=s=>s.replace(/[^a-zA-Z0-9ÄÖÜäöüß.,_-]/g,'_').slice(0,70);
           const name=[meta.supplier&&safe(meta.supplier),meta.amounts.length===1&&`${meta.amounts[0].toFixed(2)}_EUR`,'Rechnung',meta.invoice&&safe(meta.invoice),meta.invoiceDate&&safe(meta.invoiceDate)].filter(Boolean).join('_')+(isPdf?'.pdf':path.extname(a.name).toLowerCase());
-          const saved=await writeVerified(collection,name==='Rechnung.pdf'?`Beleg_${hash(bytes).slice(0,12)}.pdf`:name,bytes);
+          let existingPath;const previousFile=store.mailFile?.(job.owner,job.companyId,hash(bytes));if(previousFile)try{const previousPath=await inside(c.root,previousFile.path);if(hash(await fs.readFile(previousPath))===hash(bytes))existingPath=previousPath;}catch{}
+          const saved=existingPath||await writeVerified(collection,name==='Rechnung.pdf'?`Beleg_${hash(bytes).slice(0,12)}.pdf`:name,bytes);
           files.push({path:saved,hash:hash(bytes),originalName:a.name,messageId:message.id,attachmentId:a.id,at:new Date().toISOString()});
           // Persist provenance before any Outlook write; partial imports remain resumable.
           store.putMail(job.owner,job.companyId,message.id,{completed:false,files,issues});
           event(job,'E-Post-Anhang verifiziert abgelegt: '+path.basename(saved));
-          if(extracted.ocr)issues.push(a.name+': OCR-Ergebnis muss am Original bestätigt werden; Outlook bleibt offen.');
+          if(extracted.ocr&&!meta.manualVerification)issues.push(a.name+': OCR-Ergebnis muss am Original bestätigt werden; Outlook bleibt offen.');
         }catch(e){issues.push((a.name||a.id)+': '+e.message);}
       }
       if(!issues.length&&relevant>0&&files.length===relevant) {
@@ -131,7 +126,7 @@ function engine({store,config,ms}) {
       event(job,'Bankkonto und Auszugszeitraum geprüft.');
       advance(job,store,'mail');
       try {await importMail(job,c,collection);}catch(e){job.issues.push('E-Post-Teilfehler: '+e.message);}
-      const scan=[];for(const folder of new Set([job.monthFolderPath,collection]))for(const entry of await fs.readdir(folder,{withFileTypes:true}))scan.push({folder,entry});
+      const pending=path.join(job.monthFolderPath,'00_Nicht zugewiesene Belege');const scan=[];for(const folder of new Set([job.monthFolderPath,collection,...(await fs.stat(pending).then(s=>s.isDirectory()).catch(()=>false)?[pending]:[])]))for(const entry of await fs.readdir(folder,{withFileTypes:true}))scan.push({folder,entry});
       let scanned=0;for(const {folder,entry} of scan) {
           advance(job,store,'documents',scanned++,scan.length);
           checkpoint(job);

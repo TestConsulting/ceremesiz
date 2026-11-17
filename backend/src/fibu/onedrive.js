@@ -16,10 +16,23 @@ function oneDrive({graph,config}){
    try{const item=await graph(owner,company,route(company,relative));if(!item.folder||item.remoteItem)fail('Ausgabeziel ist kein freigegebener Ordner.');return relative;}catch(e){if(e.graphStatus!==404)throw e;}
    const parentItem=await graph(owner,company,route(company,parent));if(!parentItem.folder||parentItem.remoteItem)fail('Zielordner nicht freigegeben.');await graph(owner,company,route(company,parent)+':/children',{method:'POST',body:JSON.stringify({name,folder:{},'@microsoft.graph.conflictBehavior':'fail'})});return relative;
   },
-  async putReviewFile(owner,company,relative,bytes){
-   cleanPath(relative);if(!relative.split('/').includes('Nicht zugewiesene Belege')||bytes.length>25*1024*1024||! /\.(pdf|png|jpe?g|txt)$/i.test(relative))fail('Ungültige Belegprüf-Ausgabe.');
+  async cleanupLegacyReview(owner,company,parent,knownHashes){
+   const legacy=parent+'/Nicht zugewiesene Belege';let root;try{root=await graph(owner,company,route(company,legacy));}catch(e){if(e.graphStatus===404)return;throw e;}if(!root.folder||root.remoteItem)fail('Alte Ablage ist kein Ordner.');let count=0;
+   const check=async(relative,depth=0)=>{if(depth>3)fail('Alte Ablage enthält unbekannte Unterordner.');for(const item of await this.list(owner,company,relative)){if(++count>200)fail('Alte Ablage zu groß.');if(item.folder)await check(relative+'/'+item.name,depth+1);else{const bytes=(await this.download(owner,company,relative+'/'+item.name)).bytes;if(item.name==='Uebersicht.txt'&&bytes.toString('utf8').startsWith('ASTRA FIBU'))continue;if(!knownHashes.has(crypto.createHash('sha256').update(bytes).digest('hex')))fail('Alte Ablage enthält eine nicht anderweitig verifizierte Datei.');}}};await check(legacy);
+   // Graph DELETE is recoverable through the OneDrive recycle bin; no permanent purge.
+   await graph(owner,company,'me/drive/items/'+encodeURIComponent(root.id),{method:'DELETE',headers:{'If-Match':root.eTag}});
+  },
+  async moveReceipt(owner,company,source,destination,name,etag,expectedHash){
+   cleanPath(source);cleanPath(destination);cleanPath(name);if(name.includes('/')||! /\.(pdf|png|jpe?g)$/i.test(name))fail('Ungültiger Belegname.');const marker='00_Nicht zugewiesene Belege',parts=source.split('/'),targetParts=destination.split('/');
+   if(targetParts.at(-1)!==marker&&parts.at(-2)!==marker)fail('Verschieben nur in/aus nicht zugewiesenen Belegen.');const month=targetParts.at(-1)===marker?targetParts.slice(0,-1).join('/'):destination;if(!source.startsWith(month+'/')||destination!==month&&destination!==month+'/'+marker)fail('Verschieben außerhalb des Monatsordners gesperrt.');
+   const item=await graph(owner,company,route(company,source)),folder=await graph(owner,company,route(company,destination));if(!item.file||item.remoteItem||!folder.folder||folder.remoteItem||item.eTag!==etag)fail('Quelldatei verändert; kein Verschieben.',409);
+   let target=destination+'/'+name;try{await graph(owner,company,route(company,target));const p=require('node:path').posix.parse(name);name=p.name+'_'+expectedHash.slice(0,12)+p.ext;target=destination+'/'+name;try{await graph(owner,company,route(company,target));fail('Namenskonflikt; beide Dateien bleiben erhalten.',409);}catch(e){if(e.graphStatus!==404)throw e;}}catch(e){if(e.graphStatus!==404)throw e;}
+   await graph(owner,company,'me/drive/items/'+encodeURIComponent(item.id),{method:'PATCH',headers:{'If-Match':etag},body:JSON.stringify({parentReference:{id:folder.id},name,'@microsoft.graph.conflictBehavior':'fail'})});const after=await this.download(owner,company,target);if(crypto.createHash('sha256').update(after.bytes).digest('hex')!==expectedHash)fail('Verschobener Beleg nicht verifiziert.');return {name,path:target};
+  },
+  async putReviewFile(owner,company,relative,bytes,etag){
+   cleanPath(relative);if(!relative.split('/').includes('00_Nicht zugewiesene Belege')||bytes.length>25*1024*1024||! /\.(pdf|png|jpe?g|txt)$/i.test(relative))fail('Ungültige Belegprüf-Ausgabe.');
    const ext=relative.split('.').pop().toLowerCase();if(ext==='pdf'&&bytes.subarray(0,5).toString()!=='%PDF-'||ext==='png'&&!bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||['jpg','jpeg'].includes(ext)&&!(bytes[0]===255&&bytes[1]===216&&bytes[2]===255))fail('Belegformat stimmt nicht.');
-   return graph(owner,company,route(company,relative)+':/content?@microsoft.graph.conflictBehavior=fail',{method:'PUT',headers:{'Content-Type':ext==='txt'?'text/plain; charset=utf-8':ext==='pdf'?'application/pdf':ext==='png'?'image/png':'image/jpeg'},body:bytes});
+   return graph(owner,company,route(company,relative)+':/content'+(etag?'':'?@microsoft.graph.conflictBehavior=fail'),{method:'PUT',headers:{...(etag?{'If-Match':etag}:{}),'Content-Type':ext==='txt'?'text/plain; charset=utf-8':ext==='pdf'?'application/pdf':ext==='png'?'image/png':'image/jpeg'},body:bytes});
   },
   async ensureBackupFolder(owner,company,parent){
    cleanPath(parent,{empty:true});const relative=(parent?parent+'/':'')+'_ASTRA_Originale';

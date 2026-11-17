@@ -1,6 +1,7 @@
 const {fail}=require('./core');
 const fetchJson=async(url,options={})=>{
   const r=await fetch(url,{...options,signal:AbortSignal.timeout(30000),redirect:'error'});
+  if(r.status===204)return {};
   const data=await r.json();
   if(!r.ok) throw Object.assign(new Error('Microsoft-Anfrage fehlgeschlagen ('+r.status+'). Anmeldung/Berechtigung prüfen.'),{status:502,oauthCode:data.error,graphStatus:r.status});
   return data;
