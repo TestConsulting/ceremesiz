@@ -193,7 +193,8 @@ function engine({store,config,ms}) {
       // Complete a verified move/rename only after the destination hash is checked.
       if(hash(await fs.readFile(source))!==d.hash)fail('Originalbeleg hat sich während der Ablage geändert.');
       store.relocateMail(job.owner,job.companyId,d.hash,saved);
-      try{await fs.unlink(source);}catch{job.issues.push('Zielablage verifiziert; Quellbeleg konnte nicht entfernt/umbenannt werden: '+path.basename(source));}
+      const immutableImport=d.source==='import'||(d.portalImport?.path&&path.resolve(source)===path.resolve(d.portalImport.path));
+      if(!immutableImport)try{await fs.unlink(source);}catch{job.issues.push('Zielablage verifiziert; Quellbeleg konnte nicht entfernt/umbenannt werden: '+path.basename(source));}
       d.originalPath=d.originalPath||source;d.originalName=d.originalName||d.name;d.path=saved;d.name=path.basename(saved);
     }
     t.receipts=[...(append?t.receipts:[]),{id:d.id,hash:d.hash,path:saved,name:path.basename(saved),assignedAt:new Date().toISOString()}];

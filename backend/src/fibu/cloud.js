@@ -1,5 +1,5 @@
 const fs=require('node:fs/promises'),path=require('node:path');
-const {inside,writeVerified,fail}=require('./core');
+const {inside,writeVerified,fail,hash}=require('./core');
 const {cleanPath}=require('./onedrive');
 const {advance}=require('./progress');
 function cloudWorker({store,worker,ms}){
@@ -63,8 +63,22 @@ function cloudWorker({store,worker,ms}){
    job.searchScope={lookbackMonths:3,foldersRead,plannedReceipts:plan.length};store.save(job);
    for(const item of plan)await copyReceipt(item.entry,item.relative,item.destination);
    if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);downloadTotal+=collected.filter(supported).length;for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
+   async function readImported(imported){
+    try{const src=await inside(c.root,imported.path),bytes=await fs.readFile(src);if(hash(bytes)!==imported.hash)fail('Importdatei wurde verändert; erneuten Import prüfen.',409);return {src,bytes};}
+    catch(e){if(e.code!=='ENOENT'&&e.code!=='ENOTDIR')throw e;}
+    // Older versions moved an attached import into a job but left its registry path unchanged.
+    for(const previous of store.list(owner,job.companyId))for(const document of previous.documents||[]){
+     if(document.hash!==imported.hash||!document.path)continue;
+     let bytes;try{bytes=await fs.readFile(await inside(c.root,document.path));}catch{continue;}if(hash(bytes)!==imported.hash)continue;
+     const importsFolder=path.join(ownerRoot,'imports');await fs.mkdir(importsFolder,{recursive:true,mode:0o700});const safeFolder=await inside(c.root,importsFolder,'directory');
+     const src=await writeVerified(safeFolder,path.basename(imported.path||imported.originalName),bytes);store.putImport(owner,job.companyId,imported.hash,{...imported,path:src,recoveredAt:new Date().toISOString()});
+     job.events.push({at:new Date().toISOString(),message:'Importbeleg aus vorhandener hashgeprüfter Kopie wiederhergestellt: '+imported.originalName});return {src,bytes};
+    }
+    fail('Importdatei fehlt und es ist keine hashgeprüfte Kopie verfügbar.',409);
+   }
    for(const imported of store.imports(owner,job.companyId)){
-    const src=await inside(c.root,imported.path),bytes=await fs.readFile(src);await writeVerified(local.collectionFolder,path.basename(src),bytes);
+    try{const {src,bytes}=await readImported(imported);await writeVerified(local.collectionFolder,path.basename(src),bytes);}
+    catch(e){job.issues.push('Importbeleg '+(imported.originalName||imported.hash)+': '+(e.status?e.message:'Datei nicht lesbar. Die übrigen Belegquellen werden weiter geprüft.'));}
    }
    job.cloudSources=snapshots;job.execution='server';store.save(job);await worker.run(id,owner,local);
   }catch(e){job=store.get(owner,id);job.issues.push(e.status?e.message:'OneDrive-Verarbeitung fehlgeschlagen. Verbindung und Berechtigungen prüfen.');job.progress='Serverprüfung angehalten';store.save(job,job.cancelRequested?'cancelled':'waiting_for_user');}
