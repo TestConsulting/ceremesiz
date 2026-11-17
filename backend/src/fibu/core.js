@@ -56,7 +56,7 @@ function canonicalDocuments(docs){
  return result;
 }
 function match(t, docs) {
- const eligible=docs.filter(d=>d.verified&&!d.requiresReview&&(d.layout!=='urban-sports-invoice'||referenceMatches(t,d))&&d.amounts.length===1&&Math.abs(d.amounts[0]-Math.abs(t.amount))<.005&&(d.direction!=='outgoing'||t.amount>0)&&(!d.recurringPeriod||t.date>=d.recurringPeriod.from&&t.date<=d.recurringPeriod.to&&/miete|monatlich|dauerauftrag/i.test(t.description)));
+ const eligible=docs.filter(d=>d.verified&&!d.requiresReview&&(!d.approvedPaymentDate||Date.parse(t.date)>=Date.parse(d.approvedPaymentDate)&&Date.parse(t.date)<=Date.parse(d.approvedPaymentDate)+7*86400000)&&(d.layout!=='urban-sports-invoice'||referenceMatches(t,d))&&d.amounts.length===1&&Math.abs(d.amounts[0]-Math.abs(t.amount))<.005&&(d.direction!=='outgoing'||t.amount>0)&&(!d.recurringPeriod||t.date>=d.recurringPeriod.from&&t.date<=d.recurringPeriod.to&&/miete|monatlich|dauerauftrag/i.test(t.description)));
  const exact=eligible.filter(d=>referenceMatches(t,d));if(exact.length)return exact;
  const corroborated=eligible.filter(d=>(d.referenceEvidence&&partyKey(d.supplier)===partyKey(t.counterparty)&&t.description.includes(d.referenceEvidence.reference)&&t.description.replace(/\s/g,'').includes(d.referenceEvidence.mandate))||(d.cardEvidence&&/KARTENZAHLUNG/.test(t.description)&&t.description.includes(d.cardEvidence.timestamp)));if(corroborated.length)return corroborated;
  const refs=(t.description.toUpperCase().match(/[A-Z0-9][A-Z0-9-]{5,}/g)||[]).filter(s=>/\d/.test(s));

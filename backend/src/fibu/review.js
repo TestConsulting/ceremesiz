@@ -9,6 +9,7 @@ function validateReview(body,c){
 }
 function applyReview(document,review,c){
  if(!review||norm(review.companyName)!==norm(c.documentCompanyName))return document;
- return {...document,extractedMetadata:document.extractedMetadata||{verified:document.verified,amounts:document.amounts,supplier:document.supplier,invoice:document.invoice},verified:true,requiresReview:false,amounts:[review.amount],supplier:review.supplier,invoice:review.invoice,invoiceDate:review.invoiceDate,manualVerification:review,reason:'Am Original manuell geprüft'};
+ const due=review.invoice?.match(/Fälligkeit[ \t]+(\d{2})\.(\d{2})\.(20\d{2})/i);const scopedDate=due?due[3]+'-'+due[2]+'-'+due[1]:null;const approvedPaymentDate=scopedDate&&!Number.isNaN(Date.parse(scopedDate))&&new Date(scopedDate).toISOString().slice(0,10)===scopedDate?scopedDate:null;
+ return {...document,approvedPaymentDate,extractedMetadata:document.extractedMetadata||{verified:document.verified,amounts:document.amounts,supplier:document.supplier,invoice:document.invoice},verified:true,requiresReview:false,amounts:[review.amount],supplier:review.supplier,invoice:review.invoice,invoiceDate:review.invoiceDate,manualVerification:review,reason:'Am Original manuell geprüft'};
 }
 module.exports={validateReview,applyReview};
