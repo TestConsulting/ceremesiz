@@ -47,6 +47,7 @@ function engine({store,config,ms}) {
     for(const message of uniqueMessages) {
       advance(job,store,'mail',mailDone++,uniqueMessages.length);
       checkpoint(job);
+      const previousFiles=store.mail(job.owner,job.companyId,message.id)?.files||[];
       const files=[],issues=[],attachments=await ms.attachments(job.owner,job.companyId,mailbox,message.id);
       let relevant=0;
       for(const a of attachments) {
@@ -65,7 +66,7 @@ function engine({store,config,ms}) {
           if(!meta.verified) fail('Firma im Anhang nicht eindeutig verifiziert; keine automatische Ablage.');
           const safe=s=>s.replace(/[^a-zA-Z0-9ÄÖÜäöüß.,_-]/g,'_').slice(0,70);
           const name=[meta.supplier&&safe(meta.supplier),meta.amounts.length===1&&`${meta.amounts[0].toFixed(2)}_EUR`,'Rechnung',meta.invoice&&safe(meta.invoice),meta.invoiceDate&&safe(meta.invoiceDate)].filter(Boolean).join('_')+(isPdf?'.pdf':path.extname(a.name).toLowerCase());
-          let existingPath;const previousFile=store.mailFile?.(job.owner,job.companyId,hash(bytes));if(previousFile)try{const previousPath=await inside(c.root,previousFile.path);if(hash(await fs.readFile(previousPath))===hash(bytes))existingPath=previousPath;}catch{}
+          let existingPath;const previousFile=previousFiles.find(f=>f.hash===hash(bytes))||store.mailFile?.(job.owner,job.companyId,hash(bytes));if(previousFile)try{const previousPath=await inside(c.root,previousFile.path);if(hash(await fs.readFile(previousPath))===hash(bytes))existingPath=previousPath;}catch{}
           const saved=existingPath||await writeVerified(collection,name==='Rechnung.pdf'?`Beleg_${hash(bytes).slice(0,12)}.pdf`:name,bytes);
           if(!job.mailDocumentPaths.includes(saved))job.mailDocumentPaths.push(saved);
           files.push({path:saved,hash:hash(bytes),originalName:a.name,messageId:message.id,attachmentId:a.id,at:new Date().toISOString()});

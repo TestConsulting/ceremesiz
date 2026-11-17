@@ -94,8 +94,10 @@ test('Echter PDF-Abgleich mit synthetischen Belegen, Wiederholung und Mail-Teilf
   const duplicateJob=store.enqueue(1,params);await mailWorker.run(duplicateJob.id,1,c);assert.equal(completed,2);assert.equal(store.mail(1,'tc','mail').files.length,1);assert.ok(store.get(1,duplicateJob.id).documents.some(d=>d.hash===hash(invoice)));assert.ok(store.get(1,duplicateJob.id).mailDocumentPaths.length);
   const secondInvoice=await makePdf(receiptLines.map(s=>s.replace('G194101447','G194101448')));ms.attachments=async()=>[{'@odata.type':'#microsoft.graph.fileAttachment',id:'a',name:'invoice.pdf',contentBytes:invoice.toString('base64')},{'@odata.type':'#microsoft.graph.fileAttachment',id:'b',name:'invoice.pdf',contentBytes:secondInvoice.toString('base64')}];
   const differentJob=store.enqueue(1,params);await mailWorker.run(differentJob.id,1,c);assert.equal(completed,3);assert.equal(store.mail(1,'tc','mail').files.length,2);assert.equal(new Set(store.mail(1,'tc','mail').files.map(f=>f.path)).size,2);
+  const b=store.mail(1,'tc','mail').files.find(f=>f.hash===hash(secondInvoice)),oldPath=path.join(tmp,'old-receipt.pdf');await fs.rename(b.path,oldPath);store.relocateMail(1,'tc',b.hash,oldPath);
+  const reusedJob=store.enqueue(1,params);await mailWorker.run(reusedJob.id,1,c);assert.equal(completed,4);assert.equal(store.mail(1,'tc','mail').files.find(f=>f.hash===hash(secondInvoice)).path,await fs.realpath(oldPath));assert.ok(store.get(1,reusedJob.id).documents.some(d=>d.hash===hash(secondInvoice)));
   c.pilotMode=true;ms.list=async()=>[{id:'pilot-mail'}];
   const pilotJob=store.enqueue(1,params);await mailWorker.run(pilotJob.id,1,c);
-  assert.equal(completed,3);assert.equal(store.mail(1,'tc','pilot-mail').completed,false);assert.equal(store.mail(1,'tc','pilot-mail').markingDeferred,true);assert.equal(store.get(1,pilotJob.id).mailMarkingDeferred,true);
+  assert.equal(completed,4);assert.equal(store.mail(1,'tc','pilot-mail').completed,false);assert.equal(store.mail(1,'tc','pilot-mail').markingDeferred,true);assert.equal(store.get(1,pilotJob.id).mailMarkingDeferred,true);
  }finally{db.close();await fs.rm(tmp,{recursive:true,force:true});}
 });
