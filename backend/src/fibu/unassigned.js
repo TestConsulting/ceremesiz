@@ -1,4 +1,4 @@
-﻿const fs=require('node:fs/promises'),path=require('node:path');
+const fs=require('node:fs/promises'),path=require('node:path');
 const {inside,hash,writeVerified}=require('./core');
 const folderName='Nicht zugewiesene Belege';
 function candidates(job){
@@ -18,7 +18,7 @@ async function createReview(job,c){
 }
 async function publishReview(job,c,drive,canWrite){
  if(!canWrite(job.owner,job.companyId))throw Error('OneDrive-Schreibzugriff fehlt.');const r=job.unassignedReview,parent=job.sourceMonthPath;await drive.ensureFolder(job.owner,job.companyId,parent,folderName);const relative=(parent?parent+'/':'')+folderName;await drive.ensureFolder(job.owner,job.companyId,relative,r.snapshotName);const snapshot=relative+'/'+r.snapshotName;
- for(const file of r.files){const bytes=await fs.readFile(await inside(c.root,file.path));if(hash(bytes)!==file.hash)throw Error('Ausgabekopie wurde verändert.');await drive.putReviewFile(job.owner,job.companyId,snapshot+'/'+file.name,bytes);const checked=await drive.download(job.owner,job.companyId,snapshot+'/'+file.name);if(hash(checked.bytes)!==file.hash)throw Error('OneDrive-Ausgabekopie nicht verifiziert.');}
+ for(const file of r.files){const bytes=await fs.readFile(await inside(c.root,file.path));if(hash(bytes)!==file.hash)throw Error('Ausgabekopie wurde verändert.');try{await drive.putReviewFile(job.owner,job.companyId,snapshot+'/'+file.name,bytes);}catch(e){throw Object.assign(new Error('OneDrive-Belegkopie: '+(e.oauthCode?.message||e.message)),{status:502});}const checked=await drive.download(job.owner,job.companyId,snapshot+'/'+file.name);if(hash(checked.bytes)!==file.hash)throw Error('OneDrive-Ausgabekopie nicht verifiziert.');}
  r.published=true;r.drivePath=snapshot;r.webUrl=(await drive.folder(job.owner,job.companyId,snapshot)).webUrl;return r;
 }
 module.exports={folderName,candidates,createReview,publishReview};
