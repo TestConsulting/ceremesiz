@@ -119,6 +119,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     setImmediate(()=>worker.run(job.id,req.user.id,c));
   });
   router.get('/jobs/:id',(req,res)=>res.json(jobFor(req)));
+  router.post('/jobs/:id/unassigned',...write,async(req,res)=>{const job=jobFor(req),c=companyFor(config,req.user,job.companyId);if(config.mode==='remote'||['queued','running'].includes(job.state))fail('Ordner nach einem beendeten Server-/Lokallauf erstellen.',409);await worker.exportUnassigned(job,c);store.save(job);res.json({count:job.unassignedReview.count,published:job.unassignedReview.published,webUrl:job.unassignedReview.webUrl||null});});
   router.post('/jobs/:id/documents/:documentId/verify',...write,async(req,res)=>{
     const job=jobFor(req),c=companyFor(config,req.user,job.companyId);
     if(store.hasActive(job.companyId,job.month)||worker.running.has(job.id)||store.isClosed(job.companyId,job.month,job.folderId))fail('Monat läuft oder ist abgeschlossen.',409);

@@ -101,6 +101,7 @@ function engine({store,config,ms}) {
     if(reopened.pages.length!==original.pages.length||reopened.text!==original.text)fail('PDF-Prüfung: Text oder Seitenzahl verändert.');
     job.markedPdfPath=await writeVerified(folder,astraName(path.basename(bank)),output);
     if(job.execution==='server'&&ms.publishBank){try{await ms.publishBank(job,c,store);}catch(e){job.issues.push('OneDrive-PDF konnte nicht aktualisiert werden: '+(e.status?e.message:'Verbindung prüfen.'));}}
+    try{await exportUnassigned(job,c);}catch{job.issues.push('Ordner für nicht zugewiesene Belege konnte nicht vollständig erstellt werden. Originaldateien bleiben erhalten.');}
     job.lastSuccessfulCheck=new Date().toISOString();
     job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
     advance(job,store,'done');
@@ -108,6 +109,7 @@ function engine({store,config,ms}) {
     job.reportPath=await writeVerified(folder,`ASTRA_Pruefbericht_${job.month}_${job.id}.json`,Buffer.from(JSON.stringify({...job,documents:job.documents.map(({text,...d})=>d)},null,2)));
     store.putMonth(job.owner,job.companyId,job.month,{execution:job.execution||'local',bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id},false,job.folderId);
   }
+  async function exportUnassigned(job,c){await require('./unassigned').createReview(job,c);if(job.execution==='server'&&ms.publishUnassigned)await ms.publishUnassigned(job,c);}
   async function verifyDocument(job,d,body,c){
     const file=await inside(c.root,d.path);if(hash(await fs.readFile(file))!==d.hash)fail('Beleg wurde seit der Prüfung verändert.',409);
     const review={...require('./review').validateReview(body,c),checkedBy:job.owner,documentHash:d.hash};
@@ -201,6 +203,6 @@ function engine({store,config,ms}) {
     t.status='matched';if(!t.color)t.color='yellow';t.reason='Betrag und Referenz/Gegenpartei bzw. manuelle Bestätigung; Ablage verifiziert';
     job.events.push({at:new Date().toISOString(),message:'Belegablage verifiziert: '+t.id});
   }
-  return {validate,run,exportResult,assign,verifyDocument,running};
+  return {validate,run,exportResult,exportUnassigned,assign,verifyDocument,running};
 }
 module.exports={engine};

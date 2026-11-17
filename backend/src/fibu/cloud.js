@@ -45,6 +45,7 @@ function cloudWorker({store,worker,ms}){
     if(++foldersRead>80)fail('Mehr als 80 Quellordner. Suche eingrenzen.');
     const children=known||await ms.driveList(owner,job.companyId,relative);
     for(const entry of children){
+     if(entry.folder&&entry.name.toLowerCase()==='nicht zugewiesene belege')continue;
      if(entry.folder&&depth>=8)fail('Belegsuche auf acht Ordnerebenen begrenzt. Suche eingrenzen.');
      if(entry.folder&&depth<8&&!/^_(?:ASTRA_Originale|Vorversionen)|^Backup/i.test(entry.name)){cleanPath(entry.name);await collect((relative?relative+'/':'')+entry.name,destination,null,depth+1);}
      else if(supported(entry)&&entry.name!==bank.name&&!/^(?:Sparkasse_\d{2}[._]|GK_|Pruefprotokoll)/i.test(entry.name)){plan.push({entry,relative,destination});if(plan.length>500)fail('Mehr als 500 Belege. Suche eingrenzen.');}

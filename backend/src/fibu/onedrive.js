@@ -11,6 +11,16 @@ function oneDrive({graph,config}){
   return 'me/drive/root:/'+(root+(rel?'/'+rel:'')).split('/').map(encodeURIComponent).join('/');
  };
  return {
+  async ensureFolder(owner,company,parent,name){
+   cleanPath(parent,{empty:true});cleanPath(name);if(name.includes('/'))fail('Ungültiger Ordnername.');const relative=(parent?parent+'/':'')+name;
+   try{const item=await graph(owner,company,route(company,relative));if(!item.folder||item.remoteItem)fail('Ausgabeziel ist kein freigegebener Ordner.');return relative;}catch(e){if(e.graphStatus!==404)throw e;}
+   const parentItem=await graph(owner,company,route(company,parent));if(!parentItem.folder||parentItem.remoteItem)fail('Zielordner nicht freigegeben.');await graph(owner,company,route(company,parent)+':/children',{method:'POST',body:JSON.stringify({name,folder:{},'@microsoft.graph.conflictBehavior':'fail'})});return relative;
+  },
+  async putReviewFile(owner,company,relative,bytes){
+   cleanPath(relative);if(!relative.split('/').includes('Nicht zugewiesene Belege')||bytes.length>25*1024*1024||! /\.(pdf|png|jpe?g|txt)$/i.test(relative))fail('Ungültige Belegprüf-Ausgabe.');
+   const ext=relative.split('.').pop().toLowerCase();if(ext==='pdf'&&bytes.subarray(0,5).toString()!=='%PDF-'||ext==='png'&&!bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||['jpg','jpeg'].includes(ext)&&!(bytes[0]===255&&bytes[1]===216&&bytes[2]===255))fail('Belegformat stimmt nicht.');
+   return graph(owner,company,route(company,relative)+':/content?@microsoft.graph.conflictBehavior=fail',{method:'PUT',headers:{'Content-Type':ext==='txt'?'text/plain; charset=utf-8':ext==='pdf'?'application/pdf':ext==='png'?'image/png':'image/jpeg'},body:bytes});
+  },
   async ensureBackupFolder(owner,company,parent){
    cleanPath(parent,{empty:true});const relative=(parent?parent+'/':'')+'_ASTRA_Originale';
    try{const item=await graph(owner,company,route(company,relative));if(!item.folder||item.remoteItem)fail('Originalsicherung ist kein Ordner.');return relative;}catch(e){if(e.graphStatus!==404)throw e;}
