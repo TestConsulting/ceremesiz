@@ -66,3 +66,7 @@ test('PDF-Fassungen derselben Kartenrechnung brauchen vollständig identische Za
  for(const field of ['reference','tender','merchantId','issuerVat','timestamp'])assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),cardEvidence:{...b.cardEvidence,[field]:'different'}}]).length,2);
  assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),amounts:[135]}]).length,2);assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),requiresReview:true}]).length,2);assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),text:'Stornorechnung'}]).length,2);
 });
+test('Fortschritt zeigt nach abgeschlossener Nachzuordnung beendet, während echter Veröffentlichung weiter laufend',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require('node:path').join(__dirname,'../private/fibu.js'),'utf8'),fn=source.slice(source.indexOf('function fibuProgress('),source.indexOf('async function viewFibu(')),progress=vm.runInNewContext(fn+'\nfibuProgress',{esc:String,Date});const job={state:'partial',workProgress:{percent:100,stage:'publish',label:'OneDrive-PDF aktualisieren',startedAt:'2026-10-01T10:00:00Z',updatedAt:'2026-10-01T10:01:00Z'}};
+ assert.match(progress(job),/Prüfung beendet/);assert.doesNotMatch(progress(job),/OneDrive-PDF aktualisieren/);assert.match(progress({...job,state:'running'}),/OneDrive-PDF aktualisieren/);
+});
