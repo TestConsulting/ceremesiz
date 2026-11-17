@@ -36,7 +36,7 @@ docker run --rm --network none --entrypoint node "$image" --test --test-concurre
           sh '''set +x
 set -eu
 cd /var/www/ceremesiz-app
-docker compose run --rm --no-deps --user root -e ASTRA_FIBU_BOOTSTRAP -v "$PWD/backend:/configure" backend node /configure/scripts/configure-fibu.cjs
+docker compose run --rm --no-deps --user root -e ASTRA_FIBU_BOOTSTRAP -e ASTRA_TC_PILOT_MODE=false -v "$PWD/backend:/configure" backend node /configure/scripts/configure-fibu.cjs
 '''
         }
       }

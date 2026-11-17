@@ -11,6 +11,7 @@ test('Jenkins-Konfiguration bewahrt bestehende Login-Werte und sichert private K
   assert.throws(()=>configure(root,{config:{...config,mode:'local'},runnerSecret}));assert.throws(()=>configure(root,{config,runnerSecret:'weak'}));
   const cloud={...config,mode:'cloud',companies:{tc:{...config.companies.tc,cloud:{rootPath:'SyntheticCompany'}}}};
   assert.equal(configure(root,{config:cloud}).mode,'cloud');const cloudEnv=fs.readFileSync(path.join(root,'.env'),'utf8');assert.ok(!cloudEnv.includes('FIBU_RUNNER_SECRET='));const key=cloudEnv.match(/^FIBU_TOKEN_KEY=(.+)$/m)[1];assert.equal(Buffer.from(key,'base64').length,32);
+  cloud.companies.immo={pilotMode:true};assert.equal(configure(root,{config:cloud},{tcPilotMode:false}).pilotMode,false);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'data/fibu.config.json'),'utf8')).companies.tc.pilotMode,false);assert.equal(cloud.companies.immo.pilotMode,true);assert.throws(()=>configure(root,{config:cloud},{tcPilotMode:'invalid'}));
   configure(root,{config:cloud});assert.equal(fs.readFileSync(path.join(root,'.env'),'utf8').match(/^FIBU_TOKEN_KEY=(.+)$/m)[1],key);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

@@ -1,10 +1,11 @@
 // Run by the existing Jenkins job with a masked Secret Text binding.
 // No credential is accepted as an argument or printed to a build log.
 const fs=require('node:fs'),path=require('node:path');
-function configure(root,payload){
+function configure(root,payload,{tcPilotMode}={}){
  const {config,runnerSecret}=payload;
  if(!['remote','cloud'].includes(config?.mode)||!config.companies?.tc?.enabled||(config.mode==='remote'&&! /^[A-Za-z0-9_-]{43,128}$/.test(runnerSecret||'')))throw Error('Ungültige private FIBU-Konfiguration.');
  if(!config.companies.tc.allowedUsers?.length||!config.microsoft?.tenantId||!config.microsoft?.clientId)throw Error('Firmenbenutzer oder Microsoft-App fehlen.');
+ if(tcPilotMode!==undefined){if(typeof tcPilotMode!=='boolean')throw Error('Ungültiger TestConsulting-Pilotmodus.');config.companies.tc.pilotMode=tcPilotMode;}
  const data=path.join(root,'data'),file=path.join(data,'fibu.config.json'),env=path.join(root,'.env');
  fs.mkdirSync(data,{recursive:true});
  if(!fs.existsSync(env))throw Error('Bestehende Server-.env fehlt; keine neue Login-Konfiguration anlegen.');
@@ -27,5 +28,5 @@ function configure(root,payload){
  fs.writeFileSync(env,existing.join('\n')+'\n');
  return {configured:true,company:'tc',mode:config.mode,pilotMode:config.companies.tc.pilotMode===true};
 }
-if(require.main===module){try{const value=process.env.ASTRA_FIBU_BOOTSTRAP;if(!value)throw Error('Jenkins Secret-Text-Binding fehlt.');console.log(JSON.stringify(configure(path.resolve(__dirname,'..'),JSON.parse(value))));}catch{console.error('Private FIBU-Konfiguration konnte nicht sicher angewendet werden.');process.exitCode=1;}}
+if(require.main===module){try{const value=process.env.ASTRA_FIBU_BOOTSTRAP;if(!value)throw Error('Jenkins Secret-Text-Binding fehlt.');console.log(JSON.stringify(configure(path.resolve(__dirname,'..'),JSON.parse(value),{tcPilotMode:process.env.ASTRA_TC_PILOT_MODE===undefined?undefined:process.env.ASTRA_TC_PILOT_MODE==='false'?false:process.env.ASTRA_TC_PILOT_MODE==='true'?true:'invalid'})));}catch{console.error('Private FIBU-Konfiguration konnte nicht sicher angewendet werden.');process.exitCode=1;}}
 module.exports={configure};
