@@ -35,6 +35,7 @@ function engine({store,config,ms}) {
     return {id:digest,path:file,name,hash:digest,...pdf.receiptMetadata(extracted,c),...(extracted.ocr?{ocr:extracted.ocr,requiresReview:true,reason:'OCR-Vorschlag: Firma, Betrag und Referenz am Original bestätigen'}:{}),...source};
   }
   async function importMail(job,c,collection) {
+    job.mailDocumentPaths=[];
     if(!ms.connected(job.owner,job.companyId)) {job.issues.push('E-Post nicht verbunden; nur lokale Bestandsbelege geprüft.');return;}
     const mailbox=c.mailbox||'epost@testconsulting.de';
     const messages=await ms.list(job.owner,job.companyId,mailbox);
@@ -66,6 +67,7 @@ function engine({store,config,ms}) {
           const name=[meta.supplier&&safe(meta.supplier),meta.amounts.length===1&&`${meta.amounts[0].toFixed(2)}_EUR`,'Rechnung',meta.invoice&&safe(meta.invoice),meta.invoiceDate&&safe(meta.invoiceDate)].filter(Boolean).join('_')+(isPdf?'.pdf':path.extname(a.name).toLowerCase());
           let existingPath;const previousFile=store.mailFile?.(job.owner,job.companyId,hash(bytes));if(previousFile)try{const previousPath=await inside(c.root,previousFile.path);if(hash(await fs.readFile(previousPath))===hash(bytes))existingPath=previousPath;}catch{}
           const saved=existingPath||await writeVerified(collection,name==='Rechnung.pdf'?`Beleg_${hash(bytes).slice(0,12)}.pdf`:name,bytes);
+          if(!job.mailDocumentPaths.includes(saved))job.mailDocumentPaths.push(saved);
           files.push({path:saved,hash:hash(bytes),originalName:a.name,messageId:message.id,attachmentId:a.id,at:new Date().toISOString()});
           // Persist provenance before any Outlook write; partial imports remain resumable.
           store.putMail(job.owner,job.companyId,message.id,{completed:false,files,issues});
@@ -127,14 +129,15 @@ function engine({store,config,ms}) {
       advance(job,store,'mail');
       try {await importMail(job,c,collection);}catch(e){job.issues.push('E-Post-Teilfehler: '+e.message);}
       const pending=path.join(job.monthFolderPath,'00_Nicht zugewiesene Belege');const scan=[];for(const folder of new Set([job.monthFolderPath,collection,...(await fs.stat(pending).then(s=>s.isDirectory()).catch(()=>false)?[pending]:[])]))for(const entry of await fs.readdir(folder,{withFileTypes:true}))scan.push({folder,entry});
-      let scanned=0;for(const {folder,entry} of scan) {
+      for(const file of job.mailDocumentPaths||[])if(!scan.some(s=>path.join(s.folder,s.entry.name)===file))scan.push({folder:path.dirname(file),entry:{name:path.basename(file),isFile:()=>true},mail:true});
+      let scanned=0;for(const {folder,entry,mail} of scan) {
           advance(job,store,'documents',scanned++,scan.length);
           checkpoint(job);
           if(!entry.isFile()||! /\.(pdf|jpe?g|png)$/i.test(entry.name)||/ASTRA_Pruefbericht/i.test(entry.name)||entry.name.startsWith(path.parse(job.bankPdfPath).name+'_Astra'))continue;
           const file=await inside(c.root,path.join(folder,entry.name));
           if(file===job.bankPdfPath)continue;
           try {
-            let d=await document(file,c,{source:folder===collection?'collection':'month'});
+            let d=await document(file,c,{source:mail||folder===collection?'collection':'month'});
             const provenance=store.imports(owner,job.companyId).find(i=>i.hash===d.hash);if(provenance)d.portalImport=provenance;
             d=require('./review').applyReview(d,store.documentReview(owner,job.companyId,d.hash),c);
             if(/Auszugszeitraum|Anfangssaldo|Endsaldo/i.test(d.text))continue;

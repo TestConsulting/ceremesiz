@@ -91,7 +91,7 @@ test('Echter PDF-Abgleich mit synthetischen Belegen, Wiederholung und Mail-Teilf
   assert.match(store.get(1,mailJob.id).issues.join(' '),/Firma/);
   ms.attachments=async()=>[{'@odata.type':'#microsoft.graph.fileAttachment',id:'a',name:'invoice.pdf',contentBytes:invoice.toString('base64')}];
   const mailOk=store.enqueue(1,params);await mailWorker.run(mailOk.id,1,c);assert.equal(completed,1);assert.equal(store.mail(1,'tc','mail').completed,true);
-  const duplicateJob=store.enqueue(1,params);await mailWorker.run(duplicateJob.id,1,c);assert.equal(completed,2);assert.equal(store.mail(1,'tc','mail').files.length,1);
+  const duplicateJob=store.enqueue(1,params);await mailWorker.run(duplicateJob.id,1,c);assert.equal(completed,2);assert.equal(store.mail(1,'tc','mail').files.length,1);assert.ok(store.get(1,duplicateJob.id).documents.some(d=>d.hash===hash(invoice)));assert.ok(store.get(1,duplicateJob.id).mailDocumentPaths.length);
   const secondInvoice=await makePdf(receiptLines.map(s=>s.replace('G194101447','G194101448')));ms.attachments=async()=>[{'@odata.type':'#microsoft.graph.fileAttachment',id:'a',name:'invoice.pdf',contentBytes:invoice.toString('base64')},{'@odata.type':'#microsoft.graph.fileAttachment',id:'b',name:'invoice.pdf',contentBytes:secondInvoice.toString('base64')}];
   const differentJob=store.enqueue(1,params);await mailWorker.run(differentJob.id,1,c);assert.equal(completed,3);assert.equal(store.mail(1,'tc','mail').files.length,2);assert.equal(new Set(store.mail(1,'tc','mail').files.map(f=>f.path)).size,2);
   c.pilotMode=true;ms.list=async()=>[{id:'pilot-mail'}];
