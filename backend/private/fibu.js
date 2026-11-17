@@ -47,6 +47,7 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     $('#fibuStatus').innerHTML=`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p>${fibuProgress(job)}<p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
       <p>${txs.filter(t=>t.status==='matched').length} zugeordnet · ${txs.filter(t=>t.status==='missing').length} Beleg fehlt · ${txs.filter(t=>t.status==='manual').length} manuell · ${txs.filter(t=>t.status==='not_required').length} kein Beleg notwendig</p>
       ${active?'<button id="fibuCancel">Lauf abbrechen</button>':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
+      ${job.mailSummary?`<p class="fibu-status"><strong>E-Post:</strong> ${job.mailSummary.processed}/${job.mailSummary.messages} Nachrichten geprüft · ${job.mailSummary.marked} mit ASTRA/Erledigt markiert · ${job.mailSummary.failed} mit Ablage-/Verbindungsfehlern. Anhänge: ${job.mailSummary.stored} neu gespeichert, ${job.mailSummary.reused} wiederverwendet.</p>`:''}
       ${job.issues?.length?`<ul>${job.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:''}`;
     const base='/api/fibu/jobs/'+encodeURIComponent(job.id)+'/files/';
     $('#fibuResult').innerHTML=`<section class="panel fibu-status"><a href="${base}original" target="_blank" rel="noopener">Originalbank öffnen</a>

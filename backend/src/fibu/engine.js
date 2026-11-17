@@ -34,61 +34,7 @@ function engine({store,config,ms}) {
     const extracted=await extractReceipt(bytes,isPdf,c);
     return {id:digest,path:file,name,hash:digest,...pdf.receiptMetadata(extracted,c),...(extracted.ocr?{ocr:extracted.ocr,requiresReview:true,reason:'OCR-Vorschlag: Firma, Betrag und Referenz am Original bestätigen'}:{}),...source};
   }
-  async function importMail(job,c,collection) {
-    job.mailDocumentPaths=[];
-    if(!ms.connected(job.owner,job.companyId)) {job.issues.push('E-Post nicht verbunden; nur lokale Bestandsbelege geprüft.');return;}
-    const mailbox=c.mailbox||'epost@testconsulting.de';
-    const messages=await ms.list(job.owner,job.companyId,mailbox);
-    if(ms.search)for(const ref of require('./mail-references').mailReferences(job.transactions)) {
-      checkpoint(job);
-      try{messages.push(...await ms.search(job.owner,job.companyId,mailbox,ref));}catch(e){job.issues.push('Historische Belegsuche: '+e.message);}
-    }
-    const uniqueMessages=[...new Map(messages.map(m=>[m.id,m])).values()];let mailDone=0;
-    for(const message of uniqueMessages) {
-      advance(job,store,'mail',mailDone++,uniqueMessages.length);
-      checkpoint(job);
-      const previousFiles=store.mail(job.owner,job.companyId,message.id)?.files||[];
-      const files=[],issues=[],attachments=await ms.attachments(job.owner,job.companyId,mailbox,message.id);
-      let relevant=0;
-      for(const a of attachments) {
-        if(a.isInline && /logo|signature|signatur/i.test(a.name||'')) {event(job,'Inline-Signatur/Logo ausgelassen: '+a.name);continue;}
-        if(!/\.(pdf|jpe?g|png)$/i.test(a.name||'')) {issues.push('Nicht klassifizierter Anhang: '+(a.name||a.id));continue;}
-        relevant++;
-        try {
-          if(a['@odata.type']!=='#microsoft.graph.fileAttachment'||!a.contentBytes)fail('Anhang nicht herunterladbar.');
-          const bytes=Buffer.from(a.contentBytes,'base64');
-          if(bytes.length>25*1024*1024) fail('Anhang zu groß.');
-          const isPdf=/\.pdf$/i.test(a.name);
-          if(!isPdf&&!c.ocrEnabled)fail('Bildanhang benötigt OCR/manuelle Firmenprüfung; Nachricht bleibt offen.');
-          if(isPdf&&bytes.subarray(0,5).toString()!=='%PDF-') fail('PDF-Signatur ungültig.');
-          const extracted=await extractReceipt(bytes,isPdf,c);
-          const meta=require('./review').applyReview(pdf.receiptMetadata(extracted,c),store.documentReview(job.owner,job.companyId,hash(bytes)),c);
-          if(!meta.verified) fail('Firma im Anhang nicht eindeutig verifiziert; keine automatische Ablage.');
-          const safe=s=>s.replace(/[^a-zA-Z0-9ÄÖÜäöüß.,_-]/g,'_').slice(0,70);
-          const name=[meta.supplier&&safe(meta.supplier),meta.amounts.length===1&&`${meta.amounts[0].toFixed(2)}_EUR`,'Rechnung',meta.invoice&&safe(meta.invoice),meta.invoiceDate&&safe(meta.invoiceDate)].filter(Boolean).join('_')+(isPdf?'.pdf':path.extname(a.name).toLowerCase());
-          let existingPath;const previousFile=previousFiles.find(f=>f.hash===hash(bytes))||store.mailFile?.(job.owner,job.companyId,hash(bytes));if(previousFile)try{const previousPath=await inside(c.root,previousFile.path);if(hash(await fs.readFile(previousPath))===hash(bytes))existingPath=previousPath;}catch{}
-          const saved=existingPath||await writeVerified(collection,name==='Rechnung.pdf'?`Beleg_${hash(bytes).slice(0,12)}.pdf`:name,bytes);
-          if(!job.mailDocumentPaths.includes(saved))job.mailDocumentPaths.push(saved);
-          files.push({path:saved,hash:hash(bytes),originalName:a.name,messageId:message.id,attachmentId:a.id,at:new Date().toISOString()});
-          // Persist provenance before any Outlook write; partial imports remain resumable.
-          store.putMail(job.owner,job.companyId,message.id,{completed:false,files,issues});
-          event(job,'E-Post-Anhang verifiziert abgelegt: '+path.basename(saved));
-          if(extracted.ocr&&!meta.manualVerification)issues.push(a.name+': OCR-Ergebnis muss am Original bestätigt werden; Outlook bleibt offen.');
-        }catch(e){issues.push((a.name||a.id)+': '+e.message);}
-      }
-      if(!issues.length&&relevant>0&&files.length===relevant) {
-        if(c.pilotMode===true) {
-          job.mailMarkingDeferred=true;
-          store.putMail(job.owner,job.companyId,message.id,{completed:false,files,issues:[],markingDeferred:true});
-          event(job,'Pilotimport verifiziert; Outlook-Markierung bleibt aus.');
-        }else{
-          try {await ms.complete(job.owner,job.companyId,mailbox,message.id);store.putMail(job.owner,job.companyId,message.id,{completed:true,files,issues:[]});}
-          catch(e){issues.push('Ablage erfolgt, Outlook-Markierung fehlgeschlagen: '+e.message);}
-        }
-      }
-      if(issues.length) {job.issues.push(...issues);store.putMail(job.owner,job.companyId,message.id,{completed:false,files,issues});}
-    }
-  }
+  async function importMail(job,c,collection){return require('./mail-import').importMail({job,c,collection,ms,store,event,checkpoint});}
   async function exportResult(job,c) {
     advance(job,store,'export');
     const folder=await inside(c.root,job.monthFolderPath,'directory');
