@@ -1,6 +1,6 @@
 const {fail,norm}=require('./core');
 function validateReview(body,c){
- if(body.companyName!==c.documentCompanyName||body.confirmOriginal!==true)fail('Firma und Prüfung am Original ausdrücklich bestätigen.',400);
+ if(body.companyName!==c.documentCompanyName||body.confirmOriginal!==true)fail('Firmenzuordnung und Prüfung am Original ausdrücklich bestätigen.',400);
  if(typeof body.reason!=='string'||body.reason.trim().length<5||body.reason.length>2000)fail('Nachvollziehbaren Prüfgrund angeben.',400);
  if(typeof body.amount!=='number'||!Number.isFinite(body.amount)||body.amount<=0||body.amount>1e9||Math.abs(body.amount*100-Math.round(body.amount*100))>1e-5||body.currency!=='EUR')fail('Eindeutigen Bruttobetrag in EUR angeben.',400);
  if(typeof body.supplier!=='string'||body.supplier.trim().length<2||body.supplier.length>200||typeof body.invoice!=='string'||body.invoice.length>100)fail('Rechnungssteller und gültige Referenz angeben.',400);

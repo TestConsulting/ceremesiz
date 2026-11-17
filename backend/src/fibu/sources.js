@@ -1,5 +1,5 @@
-const names={strato:'STRATO',fuelscard:'B2Mobility / FuelsCard',microsoft:'Microsoft',amazon:'Amazon',huk:'HUK-COBURG',sachbezug:'Sachbezugskarte'};
-const defaults={microsoft:'https://admin.cloud.microsoft/?#/billoverview/invoice-list',sachbezug:'https://www.sachbezugskarte.eu/#/secure/report/billing'};
+const names={strato:'STRATO',fuelscard:'B2Mobility / FuelsCard',microsoft:'Microsoft',amazon:'Amazon',huk:'HUK-COBURG',sachbezug:'Sachbezugskarte',urban_sports_club:'Urban Sports Club'};
+const defaults={urban_sports_club:'https://portal.urbansportsclub.com/login',microsoft:'https://admin.cloud.microsoft/?#/billoverview/invoice-list',sachbezug:'https://www.sachbezugskarte.eu/#/secure/report/billing'};
 const {fail,hash}=require('./core');
 function sources(c){return Object.entries(names).map(([id,name])=>{
  let url=c.portalUrls?.[id]||defaults[id]||null;

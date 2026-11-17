@@ -19,13 +19,30 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
   router.post('/imports/:companyId',...write,express.json({limit:'36mb'}),async(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId),d=require('../fibu/sources').validateImport(req.body);
+    let attachedJob=null,metadata=null,extracted=null;
+    if(req.body.jobId){
+      attachedJob=store.get(req.user.id,req.body.jobId);
+      if(!attachedJob||attachedJob.companyId!==req.params.companyId)fail('Prüflauf nicht gefunden.',404);
+      if(config.mode==='remote')fail('Direkter Import in einen Prüflauf benötigt Serverbetrieb oder lokalen Betrieb.',409);
+      if(['queued','running'].includes(attachedJob.state)||!attachedJob.transactions?.length)fail('Beleg nur in einen beendeten Prüflauf übernehmen.',409);
+      if(store.isClosed(attachedJob.companyId,attachedJob.month,attachedJob.folderId))fail('Monat ist abgeschlossen.',409);
+      extracted=await require('../fibu/pdf').extractReceipt(d.bytes,/\.pdf$/i.test(d.name),{ocr:c.ocrEnabled===true});
+      if(/Auszugszeitraum|Anfangssaldo|Endsaldo/i.test(extracted.text))fail('Kontoauszug ist kein Rechnungsbeleg.',400);
+      metadata=require('../fibu/pdf').receiptMetadata(extracted,c);
+    }
     let folder=config.mode==='local'?await inside(c.root,c.collectionFolder,'directory'):config.mode==='cloud'?path.join(c.root,String(req.user.id),'imports'):path.join(require('../fibu/runner-api').outputRoot(),'imports',String(req.user.id),req.params.companyId);
     if(config.mode!=='local')await fs.mkdir(folder,{recursive:true,mode:0o700});
     if(config.mode==='cloud')folder=await inside(c.root,folder,'directory');
     const saved=await writeVerified(folder,'Portal_'+d.source+'_'+d.hash.slice(0,12)+path.extname(d.name).toLowerCase(),d.bytes);
     const record={hash:d.hash,path:saved,source:d.source,originalName:d.name,importedAt:new Date().toISOString(),importedBy:req.user.id};
     store.putImport(req.user.id,req.params.companyId,d.hash,record);
-    res.status(201).json({hash:d.hash,source:d.source,originalName:d.name,status:'imported_unverified'});
+
+    if(attachedJob){
+      const document={id:d.hash,hash:d.hash,path:saved,name:d.name,...metadata,...(extracted.ocr?{ocr:extracted.ocr,requiresReview:true}:{}),source:'import',portalImport:record};
+      if(!attachedJob.documents.some(x=>x.hash===d.hash))attachedJob.documents.push(require('../fibu/review').applyReview(document,store.documentReview(req.user.id,req.params.companyId,d.hash),c));
+      attachedJob.events.push({at:new Date().toISOString(),message:'Lieferantenbeleg zum bestehenden Prüflauf importiert: '+d.name,documentHash:d.hash});store.save(attachedJob);
+    }
+    res.status(201).json({hash:d.hash,source:d.source,originalName:d.name,status:attachedJob?'attached_unassigned':'imported_unverified',...(attachedJob?{jobId:attachedJob.id,documentId:d.hash}:{})});
   });
   const jobFor=req=>{const j=store.get(req.user.id,req.params.id);if(!j)fail('Prüflauf nicht gefunden.',404);companyFor(config,req.user,j.companyId);return j;};
   router.get('/companies',(req,res)=>res.json({mode:config.mode,demo:config.demo===true,companies:Object.entries(names).map(([id,name])=>{

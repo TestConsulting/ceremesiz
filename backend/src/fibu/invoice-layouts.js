@@ -30,6 +30,20 @@ function extra(text){
   const sums=[...new Set([...text.matchAll(/\bSumme:[ \t]*€[ \t]*([\d.]+,\d{2})/g)].map(m=>eur(m[1])))];
   if(sums.length===1){result.amounts=sums;result.cardEvidence={timestamp:card[3]+'-'+card[2]+'-'+card[1]+'T'+card[4]};const unique=re=>{const v=[...new Set([...text.matchAll(re)].map(m=>m[1]))];return v.length===1?v[0]:null;};Object.assign(result.cardEvidence,{reference:unique(/\bReferenz:[ \t]*([0-9]{6,}-[0-9]{6,})/g),tender:unique(/\bTender:[ \t]*([A-Za-z0-9]{8,})/g),merchantId:unique(/\bMID:[ \t]*([0-9]{8,})/g),issuerVat:unique(/Ust\.-Ident\.-Nr\.:[ \t]*(DE[0-9]{9})/gi)});}
  }
+
+ if(!result.cardEvidence&&/Kartenzahlung/i.test(text)&&/Zahlung\s+erfolgt/i.test(text)&&/AS-Zeit/i.test(text)){
+  const dates=[...new Set(text.match(/\b\d{2}\.\d{2}\.20\d{2}\b/g)||[])],times=[...new Set([...text.matchAll(/\b(\d{2})\.(\d{2}),[ \t]*(\d{2}):[ \t]*(\d{2})\b/g)].map(m=>m[1]+'.'+m[2]+' '+m[3]+':'+m[4]))];
+  const values=[...new Set([...text.matchAll(/^([\d.]+,\d{2})[ \t]*\nBetrag[ \t]+EUR(?:[ \t]+Partner-ID:)?[ \t]*$/gm)].map(m=>eur(m[1])))];
+  if(dates.length===1&&times.length===1&&values.length===1&&dates[0].slice(0,5)===times[0].slice(0,5)){
+   const [day,month,year]=dates[0].split('.'),iso=year+'-'+month+'-'+day;
+   if(!Number.isNaN(Date.parse(iso))&&new Date(iso).toISOString().slice(0,10)===iso){result.amounts=values;result.cardEvidence={timestamp:iso+'T'+times[0].slice(6)};if(/\bKUGLA\b/i.test(text)&&/junited/i.test(text))result.supplier='KUGLA Autoglas GmbH';}
+  }
+ }
+
+ if(/Ihr Finance-Team von Urban Sports Club/.test(text)&&/Vielen Dank für die Zusammenarbeit mit Urban Sports Club/.test(text)){
+  const customer=text.match(/^Kundennummer[ \t]+([0-9]{5,})[ \t]*$/im)?.[1],mandate=text.match(/Ihre Mandatsreferenz lautet[ \t]+([0-9]{5,})\./i)?.[1],numbers=[...new Set([...text.matchAll(/^Rechnung[ \t]+([0-9]{5,}-[0-9]{5,})[ \t]*$/gm)].map(m=>m[1]))];
+  if(customer&&mandate===customer&&numbers.length===1&&numbers[0].startsWith(customer+'-')){result.supplier='Urban Sports GmbH';result.invoice=numbers[0];result.layout='urban-sports-invoice';const date=text.match(/^Datum[ \t]+(\d{2})\.(\d{2})\.(20\d{2})[ \t]*$/m);if(date)result.invoiceDate=date[3]+'-'+date[2]+'-'+date[1];}
+ }
  return result;
 }
 module.exports={outgoing,extra};

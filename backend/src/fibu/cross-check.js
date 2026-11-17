@@ -2,7 +2,7 @@ const {norm}=require('./core');
 const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 function moneyHits(text,value){const german=value.toFixed(2).replace('.',','),english=value.toFixed(2);return (text.replace(/[ \u00a0]/g,'').match(new RegExp('(?:^|[^0-9])(?:'+esc(german)+'|'+esc(english)+')(?=$|[^0-9])','g'))||[]).length;}
 function qualifiedCrossChecks(transactions,documents,company){
- const groups=require('./reimbursements').reimbursements(transactions,documents);
+ const groups=[...require('./reimbursements').reimbursements(transactions,documents),...require('./approved-expenses').confirmedFuelReimbursements(transactions,documents)];
  for(const d of documents.filter(d=>d.requiresReview&&d.ocr?.confidence>=50)){
   const compact=norm(d.text),digits=d.text.replace(/\s+/g,''),suffix=String(company.iban||'').replace(/\s/g,'').slice(-4);
   for(const t of transactions){
