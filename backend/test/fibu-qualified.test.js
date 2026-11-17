@@ -54,3 +54,9 @@ test('Anonymer Kartenbeleg braucht Terminal, Zeitstempel, Händler und wiederhol
  const {qualifiedCrossChecks}=require('../src/fibu/cross-check');const tx={id:'t',amount:-90.8,currency:'EUR',date:'2026-10-21',counterparty:'ExampleMarket',description:'ExampleMarket ELV65264107 19.10 18.31 SEPA-ELV-LASTSCHRIFT'},doc={id:'d',hash:'h',requiresReview:true,verified:false,ocr:{confidence:75},text:'ExampleMarket\n6526410713442610191831\nTerminal-ID 65264107\nBetrag EUR 90,80\nBrutto 90,80'};
  assert.equal(qualifiedCrossChecks([tx],[doc],company).length,1);assert.equal(qualifiedCrossChecks([{...tx,description:tx.description.replace('18.31','18.32')}],[doc],company).length,0);assert.equal(qualifiedCrossChecks([tx],[{...doc,text:doc.text.replace('Brutto 90,80','Brutto 99,80')}],company).length,0);
 });
+test('Anbietergebundene Bankreferenzen erschließen historische Rechnungen ohne allgemeine Zahlensuche',()=>{
+ const {mailReferences}=require('../src/fibu/mail-references');const tx=[{counterparty:'Microsoft Payments',description:'Microsoft.G189217557'},{counterparty:'Microsoft Payments',description:'MSFT . E08010GD6A'},{counterparty:'AMAZON PAYMENTS EUROPE S.C.A.',description:'303-8972509-7999504 AMZN Mktp DE'},{counterparty:'STRATO GmbH',description:'DRP 160310003 78282336'},{counterparty:'Telefonica Germany GmbH + Co. OHG',description:'Rg-Nr.: 1672248670/8'},{counterparty:'Steuerberater Handels Hinze Schutz',date:'2026-10-30',description:'ReNr: 5875/19.10.26'}];
+ assert.deepEqual(mailReferences(tx),['G189217557','E08010GD6A','303-8972509-7999504','DRP160310003','1672248670/8','1672248670','2026/5875']);
+ assert.deepEqual(mailReferences(tx.map(t=>({...t,counterparty:'Unbekannter Empfänger'}))),['1672248670/8']);
+ assert.deepEqual(mailReferences([{counterparty:'Microsoft Payments',description:'DE02120300000000202051 1.000,00 EUR'}]),[]);
+});

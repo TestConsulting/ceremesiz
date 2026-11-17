@@ -90,7 +90,7 @@ async function extractReceipt(bytes,isPdf=true,{ocr=false}={}) {
   const extracted=isPdf?await extract(bytes):{text:'',pages:[]};
   if(ocr&&(!isPdf||extracted.text.replace(/\s/g,'').length<40||extracted.pages[0]?.lines.map(l=>l.text).join('').replace(/\s/g,'').length<40)) {
     const recognized=await require('./ocr').recognize(bytes,isPdf);
-    if(isPdf&&/Aufwendungsausgleichsgesetz|Erstattung nach.*AAG/i.test(recognized.text))recognized.header=await require('./ocr').recognize(bytes,true,{header:true});
+    if(isPdf&&/Aufwendungsausgleichsgesetz|Erstattung nach.*AAG/i.test(recognized.text)){try{recognized.header=await require('./ocr').recognize(bytes,true,{header:true});}catch{recognized.headerIssue='Zusätzliche Kopfzeilen-OCR fehlgeschlagen; Bescheiddatum manuell prüfen.';}}
     return {...extracted,text:recognized.text,ocr:recognized};
   }
   return extracted;
