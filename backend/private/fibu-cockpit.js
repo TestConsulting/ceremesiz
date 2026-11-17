@@ -54,7 +54,7 @@ async function viewFibuHome(company){
     pickerMode=mode;pickerMonth=m||null;pickerPeriod=m?.month||'';pickerLabel=m?entryName(m):'';pickerNameEdited=!!m;selectedBank=m?.bankPdfPath||'';
     if(selectedBank&&m&&!m.bankDrivePath&&!selectedBank.includes('/'))selectedBank=m.monthFolderPath+'/'+selectedBank;
     let initial=m?.monthFolderPath||c.cloudMonthBase||'';
-    if(mode==='bank'&&(selectedBank.includes('/')||m?.bankDrivePath))initial=selectedBank.split('/').slice(0,-1).join('/');
+    if(mode==='bank'&&selectedBank&&(selectedBank.includes('/')||m?.bankDrivePath))initial=selectedBank.split('/').slice(0,-1).join('/');
     browse(initial).catch(error);
   }
   async function browse(relative){
