@@ -23,7 +23,7 @@ function oneDrive({graph,config}){
    await graph(owner,company,'me/drive/items/'+encodeURIComponent(root.id),{method:'DELETE',headers:{'If-Match':root.eTag}});
   },
   async moveReceipt(owner,company,source,destination,name,etag,expectedHash){
-   cleanPath(source);cleanPath(destination);cleanPath(name);if(name.includes('/')||! /\.(pdf|png|jpe?g)$/i.test(name))fail('Ungültiger Belegname.');const marker='00_Nicht zugewiesene Belege',parts=source.split('/'),targetParts=destination.split('/');
+   cleanPath(source);cleanPath(destination);cleanPath(name);if(name.includes('/'))fail('Ungültiger Belegname.');const marker='00_Nicht zugewiesene Belege',parts=source.split('/'),targetParts=destination.split('/');
    if(targetParts.at(-1)!==marker&&parts.at(-2)!==marker)fail('Verschieben nur in/aus nicht zugewiesenen Belegen.');const month=targetParts.at(-1)===marker?targetParts.slice(0,-1).join('/'):destination;if(!source.startsWith(month+'/')||destination!==month&&destination!==month+'/'+marker)fail('Verschieben außerhalb des Monatsordners gesperrt.');
    const item=await graph(owner,company,route(company,source)),folder=await graph(owner,company,route(company,destination));if(!item.file||item.remoteItem||!folder.folder||folder.remoteItem||item.eTag!==etag)fail('Quelldatei verändert; kein Verschieben.',409);
    let target=destination+'/'+name;try{await graph(owner,company,route(company,target));const p=require('node:path').posix.parse(name);name=p.name+'_'+expectedHash.slice(0,12)+p.ext;target=destination+'/'+name;try{await graph(owner,company,route(company,target));fail('Namenskonflikt; beide Dateien bleiben erhalten.',409);}catch(e){if(e.graphStatus!==404)throw e;}}catch(e){if(e.graphStatus!==404)throw e;}
