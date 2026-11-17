@@ -44,7 +44,17 @@ function referenceMatches(t,d){
  else if(d.invoice.length<5)return false;
  return new RegExp('(^|[^A-Z0-9])'+d.invoice.split('').map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[ \\t]*')+(d.layout==='remittance-advice'?'(?=Supplier\\b|[^A-Z0-9]|$)':'([^A-Z0-9]|$)'),'i').test(t.description);
 }
-function canonicalDocuments(docs){const seen=new Map(),result=[];for(const d of docs){const key=d.text?.normalize('NFKC').replace(/\s+/g,'');if(key&&seen.has(key)){d.duplicateOf=seen.get(key).id;continue;}if(key)seen.set(key,d);result.push(d);}return result;}
+function canonicalDocuments(docs){
+ const seenText=new Map(),seenCard=new Map(),result=[];
+ for(const d of docs){
+  const textKey=d.text?.normalize('NFKC').replace(/\s+/g,''),card=d.cardEvidence;
+  const cardKey=d.verified&&!d.requiresReview&&d.invoice?.length>=5&&d.amounts?.length===1&&card?.timestamp&&card.reference&&card.tender&&card.merchantId&&card.issuerVat&&!/storno|storniert|gutschrift|credit note/i.test(d.text||'')?JSON.stringify([d.invoice,d.amounts[0],card.timestamp,card.reference,card.tender,card.merchantId,card.issuerVat]):null;
+  const previous=(textKey&&seenText.get(textKey))||(cardKey&&seenCard.get(cardKey));
+  if(previous){d.duplicateOf=previous.id;continue;}
+  if(textKey)seenText.set(textKey,d);if(cardKey)seenCard.set(cardKey,d);result.push(d);
+ }
+ return result;
+}
 function match(t, docs) {
  const eligible=docs.filter(d=>d.verified&&!d.requiresReview&&d.amounts.length===1&&Math.abs(d.amounts[0]-Math.abs(t.amount))<.005&&(d.direction!=='outgoing'||t.amount>0)&&(!d.recurringPeriod||t.date>=d.recurringPeriod.from&&t.date<=d.recurringPeriod.to&&/miete|monatlich|dauerauftrag/i.test(t.description)));
  const exact=eligible.filter(d=>referenceMatches(t,d));if(exact.length)return exact;

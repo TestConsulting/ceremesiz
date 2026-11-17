@@ -60,3 +60,9 @@ test('Anbietergebundene Bankreferenzen erschließen historische Rechnungen ohne 
  assert.deepEqual(mailReferences(tx.map(t=>({...t,counterparty:'Unbekannter Empfänger'}))),['1672248670/8']);
  assert.deepEqual(mailReferences([{counterparty:'Microsoft Payments',description:'DE02120300000000202051 1.000,00 EUR'}]),[]);
 });
+test('PDF-Fassungen derselben Kartenrechnung brauchen vollständig identische Zahlungsidentität',()=>{
+ const {canonicalDocuments}=require('../src/fibu/core');const a={id:'a',text:'Rechnungsfassung A',verified:true,invoice:'INV12345',amounts:[134.9],cardEvidence:{timestamp:'2026-10-21T22:38',reference:'33949851-144637314',tender:'5Ysyx36CSgqi',merchantId:'100000000086308',issuerVat:'DE254615074'}},b={...a,id:'b',text:'Rechnungsfassung B'};
+ assert.equal(canonicalDocuments([structuredClone(a),structuredClone(b)]).length,1);
+ for(const field of ['reference','tender','merchantId','issuerVat','timestamp'])assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),cardEvidence:{...b.cardEvidence,[field]:'different'}}]).length,2);
+ assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),amounts:[135]}]).length,2);assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),requiresReview:true}]).length,2);assert.equal(canonicalDocuments([structuredClone(a),{...structuredClone(b),text:'Stornorechnung'}]).length,2);
+});

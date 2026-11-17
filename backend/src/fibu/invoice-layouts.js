@@ -28,7 +28,7 @@ function extra(text){
  const card=text.match(/Datum:[ \t]*(\d{2})\.(\d{2})\.(20\d{2})[ \t]*\|[ \t]*Uhrzeit:[ \t]*(\d{2}:\d{2}):\d{2}/);
  if(card&&/Genehmigt/.test(text)){
   const sums=[...new Set([...text.matchAll(/\bSumme:[ \t]*€[ \t]*([\d.]+,\d{2})/g)].map(m=>eur(m[1])))];
-  if(sums.length===1){result.amounts=sums;result.cardEvidence={timestamp:card[3]+'-'+card[2]+'-'+card[1]+'T'+card[4]};}
+  if(sums.length===1){result.amounts=sums;result.cardEvidence={timestamp:card[3]+'-'+card[2]+'-'+card[1]+'T'+card[4]};const unique=re=>{const v=[...new Set([...text.matchAll(re)].map(m=>m[1]))];return v.length===1?v[0]:null;};Object.assign(result.cardEvidence,{reference:unique(/\bReferenz:[ \t]*([0-9]{6,}-[0-9]{6,})/g),tender:unique(/\bTender:[ \t]*([A-Za-z0-9]{8,})/g),merchantId:unique(/\bMID:[ \t]*([0-9]{8,})/g),issuerVat:unique(/Ust\.-Ident\.-Nr\.:[ \t]*(DE[0-9]{9})/gi)});}
  }
  return result;
 }
