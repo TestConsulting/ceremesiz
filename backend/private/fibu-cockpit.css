@@ -25,3 +25,5 @@
 .fibu-cockpit .f-month.f-completed{background:#ecf8ef;border-color:#91c8a2;border-top-color:#00853f}.fibu-cockpit .f-completed-badge{background:#d8efdf;color:#176635;margin-left:8px}
 
 .f-job-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0}.fibu-cockpit .f-pause-button{border:1px solid #00853f;color:#006b32;background:#edf8f0;font-size:13px;font-weight:600;padding:10px 14px}.f-job-controls small{flex-basis:100%;margin:0}
+
+.fibu-cockpit .f-actions .f-job-details{flex-basis:100%;background:#edf3fc;border-color:#315d99;color:#234a80;font-size:12px;font-weight:600;padding:9px 12px}

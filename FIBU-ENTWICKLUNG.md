@@ -1,3 +1,7 @@
+## Jobsteuerung auf der Monatsübersicht
+
+Pausieren/Fortsetzen steht direkt am Fortschritt jedes aktiven bzw. unterbrochenen FiBu-Eintrags. Der zusätzliche Button „Jobdetails öffnen →“ führt ausdrücklich zu Umsätzen und Ergebnissen. Nach dem Start bleibt die Übersicht geöffnet. Die Detailansicht hat keine Pausensteuerung; der Zurück-Button verweist auf „FiBu-Monate / Jobsteuerung“. Lokal geprüft, weiterhin nicht veröffentlicht.
+
 ## Nachkorrektur Jobansicht / Unterbrechung (nur lokal)
 
 Der DOM-Abgleich erhält Elemente über IDs, Eintrags-/Buchungs-IDs und den PDF-Frame. Der Ergebnisrahmen leert die separat aktualisierte Buchungsliste nicht mehr bei jedem Poll. Neue Ergebnisabsätze können vor der Vorschau erscheinen, ohne den Frame zu ersetzen. Die Jobsteuerung steht oben in der Detailansicht und direkt am Fortschritt in der Übersicht. Unterbrochene Serverläufe unter 100 Prozent können über denselben Job erneut geprüft werden; bestehende verifizierte Ablagen werden wiederverwendet. Vollständig beendete, abgebrochene, abgeschlossene oder durch einen anderen aktiven Job blockierte Läufe werden nicht fortgesetzt.

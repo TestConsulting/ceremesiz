@@ -34,7 +34,7 @@ function fibuSearchScope(job){
 }
 async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedName=null) {
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
-  $('#main').innerHTML=head(company,'Finanzbuchhaltung',esc(selectedName||'FiBu '+(selectedMonth?selectedMonth.slice(5)+'/'+selectedMonth.slice(0,4):'')),'<button class="btn" id="fibuBack">← FiBu-Monate</button>')+`<style>
+  $('#main').innerHTML=head(company,'Finanzbuchhaltung',esc(selectedName||'FiBu '+(selectedMonth?selectedMonth.slice(5)+'/'+selectedMonth.slice(0,4):'')),'<button class="btn" id="fibuBack">← FiBu-Monate / Jobsteuerung</button>')+`<style>
     .fibu-form{display:grid;gap:12px;padding:20px}.fibu-form label{display:grid;gap:6px}.fibu-form input{width:100%;box-sizing:border-box;padding:10px}
     .fibu-review{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(350px,1fr);gap:16px}.fibu-review iframe{width:100%;height:640px;border:1px solid var(--line);order:0;border-radius:10px}.fibu-review #fibuRows{order:1;max-height:640px;overflow:auto}
     .fibu-row{padding:14px;border-bottom:1px solid var(--line);border-left:5px solid transparent}.fibu-row[data-color=green]{border-left-color:#39a85b}.fibu-row[data-color=yellow]{border-left-color:#d5b323}.fibu-row[data-color=purple]{border-left-color:#9d63bc}
@@ -44,7 +44,6 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     #fibuPlay{justify-self:start;width:auto;background:#00853f;color:white;border:0;padding:9px 15px;border-radius:6px;font:inherit;cursor:pointer}
     #fibuPlay:disabled{opacity:.5;cursor:wait}.fibu-status a{color:var(--c-tc,#00547f)}.fibu-row p{overflow-wrap:anywhere}
     .fibu-dialog{max-width:580px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:13px;padding:27px;margin:auto;color:var(--ink)}.fibu-dialog::backdrop{background:#1c302c66;backdrop-filter:blur(3px)}.fibu-dialog h2{font-size:21px;margin:0 0 10px}.fibu-dialog label{display:grid;gap:7px;margin:17px 0;font-size:12px}.fibu-dialog select,.fibu-dialog textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit}.fibu-dialog button{padding:9px 13px;border:1px solid var(--line);border-radius:6px;background:white;cursor:pointer}.fibu-dialog .primary{background:#00853f;color:white;border-color:#00853f}
-    .fibu-job-controls{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;background:white;border:1px solid #b8d9c4}.fibu-job-controls small{flex-basis:100%;color:#74828a}.fibu-job-controls .primary{background:#00853f;color:white}
     @media(max-width:1000px){.fibu-review{grid-template-columns:1fr}}
     </style><details class="panel"><summary style="padding:16px;cursor:pointer">Prüfauftrag, Pfade &amp; Verbindung</summary><div class="fibu-status" id="fibuConnection">Konfiguration wird geladen …</div>
     <form id="fibuStart" class="fibu-form"><label>Monatsordner (auf dem Ausführungsrechner)<input name="folder" required placeholder="…\\2026\\10"></label>
@@ -52,7 +51,7 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     <button class="btn" id="fibuPlay" disabled>▶ Astra FIBU starten</button></form></details><p id="fibuError" role="alert" class="fibu-error"></p>
     <section class="panel fibu-legend">Grün: konfigurierte Rechnungsgutschrift – kein Beleg notwendig, keine Belegübernahme. Gelb: Beleg erfolgreich abgelegt.
     Lila: betriebliche Vorgabe „Kein Beleg notwendig“. Ohne Farbe: offen. Ein beendeter Lauf schließt den Monat nicht automatisch ab.</section>
-    <div id="fibuJobControls" class="panel fibu-job-controls" role="group" aria-label="Jobsteuerung"></div><section class="panel fibu-status"><label>Prüflauf <select id="fibuJobs"><option>Keine Läufe</option></select></label><div id="fibuStatus"></div></section><div id="fibuResult"></div><dialog id="fibuAssignDialog" class="fibu-dialog"></dialog>`;
+    <section class="panel fibu-status"><label>Prüflauf <select id="fibuJobs"><option>Keine Läufe</option></select></label><div id="fibuStatus"></div></section><div id="fibuResult"></div><dialog id="fibuAssignDialog" class="fibu-dialog"></dialog>`;
   const error=e=>{if(generation===fibuGeneration)$('#fibuError').textContent=e.message;};
   $('#fibuBack').onclick=()=>viewFibuHome(company);
   const form=$('#fibuStart');form.folder.oninput=()=>$('#fibuMonth').textContent=fibuMonth(form.folder.value);
@@ -61,15 +60,13 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     current=job;form.folder.value=job.sourceMonthPath||job.monthFolderPath;form.bank.value=job.sourceBankName||job.bankPdfPath;$('#fibuMonth').textContent=job.month;
     const active=['queued','running'].includes(job.state),txs=job.transactions||[];
     $('#fibuPlay').disabled=active;
-    fibuPatchDom($('#fibuJobControls'),'<strong>'+esc(active?(job.pauseRequested?'Prüfung pausiert / Pause angefordert':'Prüfung läuft'):fibuCanResume(job)?'Prüfung unterbrochen':'Prüfung beendet')+'</strong>'+((active||fibuCanResume(job))?'<button id="fibuPause" class="btn primary">'+(active&&!job.pauseRequested?'Ⅱ Prüfung pausieren':'▶ Prüfung fortsetzen')+'</button>':'')+(active?'<button id="fibuCancel" class="btn">Lauf abbrechen</button>':'')+(fibuCanResume(job)?'<small>Beim Fortsetzen werden Quellen erneut geprüft; bereits gespeicherte Anhänge werden wiederverwendet.</small>':''));
     fibuPatchDom($('#fibuStatus'),`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p>${fibuProgress(job)}<p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
       <p>${txs.filter(t=>t.status==='matched').length} zugeordnet · ${txs.filter(t=>t.status==='missing').length} Beleg fehlt · ${txs.filter(t=>t.status==='manual').length} manuell · ${txs.filter(t=>t.status==='not_required').length} kein Beleg notwendig</p>
-      ${active?'':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
+      ${active?'<button id="fibuCancel">Lauf abbrechen</button>':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
       ${job.mailSummary?`<p class="fibu-status"><strong>E-Post:</strong> ${job.mailSummary.processed}/${job.mailSummary.messages} Nachrichten geprüft · ${job.mailSummary.marked} mit ASTRA/Erledigt markiert · ${job.mailSummary.failed} mit Ablage-/Verbindungsfehlern. Anhänge: ${job.mailSummary.stored} neu gespeichert, ${job.mailSummary.reused} wiederverwendet.</p>`:''}
       ${fibuSearchScope(job)}
       ${job.receiptPublication?`<p><strong>Belege im OneDrive-Zielordner:</strong> ${job.receiptPublication.files.length} verifiziert${job.receiptPublication.errors.length?' · '+job.receiptPublication.errors.length+' fehlgeschlagen':''}</p>`:''}
       ${job.issues?.length?`<ul>${job.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:''}`);
-    const pauseButton=$('#fibuPause');if(pauseButton)pauseButton.onclick=async()=>{pauseButton.disabled=true;try{draw(await fibuApi('/jobs/'+job.id+'/'+(job.pauseRequested||fibuCanResume(job)?'resume':'pause'),{}));clearTimeout(fibuTimer);fibuTimer=setTimeout(poll,500);}catch(e){error(e);pauseButton.disabled=false;}};
     const base='/api/fibu/jobs/'+encodeURIComponent(job.id)+'/files/';
     fibuPatchDom($('#fibuResult'),`<section class="panel fibu-status"><a href="${base}original" target="_blank" rel="noopener">Originalbank öffnen</a>
       ${job.cloudPublished?.verified&&job.cloudPublished.webUrl?` · <a href="${esc(job.cloudPublished.webUrl)}" target="_blank" rel="noopener">Aktualisierte OneDrive-PDF ↗</a>`:''}
