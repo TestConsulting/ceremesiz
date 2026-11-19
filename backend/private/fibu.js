@@ -9,12 +9,14 @@ function fibuTime(s){return s?new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/
 function fibuLabel(s){return ({queued:'Wartet auf Ausführung',running:'Prüfung läuft',waiting_for_user:'Prüfung benötigt Klärung',completed:'Prüfung beendet',partial:'Teilweise geprüft',failed:'Prüfung fehlgeschlagen',cancelled:'Abgebrochen',missing:'Beleg fehlt',manual:'Manuelle Zuordnung',matched:'Beleg zugeordnet',not_required:'Kein Beleg notwendig'})[s]||s;}
 function fibuMonth(s){return s.replace(/[\\/]+$/,'').match(/(?:^|[\\/])(20\d{2})[\\/](0[1-9]|1[0-2])$/)?.slice(1).join('-')||'Jahr/Monat noch nicht erkannt';}
 function fibuProgress(job){
- const p=job?.workProgress;if(!p)return '';const active=['queued','running'].includes(job.state),elapsed=Math.max(0,((active?Date.now():Date.parse(p.updatedAt))-Date.parse(p.startedAt))/1000),percent=p.percent||0;
+ const p=job?.workProgress;if(!p)return '';const active=['queued','running'].includes(job.state),percent=p.percent||0;
  const finished=!active&&percent===100&&['completed','partial','waiting_for_user'].includes(job.state);
+ const completedAt=job.runFinishedAt||(finished?(job.events||[]).find(e=>e.message?.startsWith('Markierte PDF gespeichert und Text/Seitenzahl verifiziert'))?.at:null)||p.updatedAt;
+ const elapsed=Math.max(0,((active?Date.now():Date.parse(completedAt))-Date.parse(p.startedAt))/1000);
  const duration=s=>s<60?Math.ceil(s)+' Sek.':Math.ceil(s/60)+' Min.';
  const remaining=percent>2&&elapsed>15?elapsed*(100-percent)/percent:null;
  const estimate=active?(remaining===null?'Restzeit wird ermittelt':'Restzeit grob '+duration(remaining*.7)+'–'+duration(remaining*1.5)+' · Schätzung, abhängig von OCR und Verbindung'):(percent===100?'Verarbeitung beendet':'Verarbeitung angehalten');
- return '<div class="f-job-progress" style="margin:12px 0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>'+esc(finished?'Prüfung beendet':p.label)+(p.total&&!finished?' · '+p.done+'/'+p.total:'')+'</strong><span>'+percent+' %</span></div><progress aria-label="Fortschritt des Prüflaufs" max="100" value="'+percent+'" style="width:100%;height:12px;accent-color:#00853f"></progress><small style="display:block;margin-top:5px;color:#74828a">'+estimate+' · Bisher '+duration(elapsed)+'</small></div>';
+ return '<div class="f-job-progress" style="margin:12px 0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>'+esc(finished?'Prüfung beendet':p.label)+(p.total&&!finished?' · '+p.done+'/'+p.total:'')+'</strong><span>'+percent+' %</span></div><progress aria-label="Fortschritt des Prüflaufs" max="100" value="'+percent+'" style="width:100%;height:12px;accent-color:#00853f"></progress><small style="display:block;margin-top:5px;color:#74828a">'+(finished?'Abgeschlossen · Dauer: '+duration(elapsed):estimate+' · Bisher '+duration(elapsed))+'</small></div>';
 }
 function fibuSearchScope(job){
  const scope=job.searchScope||{},legacy=!scope.folders,folders=scope.folders||[...new Set((job.cloudSources||[]).map(f=>f.path?.split('/').slice(0,-1).join('/')).filter(Boolean))].map(p=>({path:p,kind:p===job.sourceMonthPath||p.startsWith(job.sourceMonthPath+'/')?'selected':/\/20\d{2}\/(0[1-9]|1[0-2])(?:\/|$)/.test(p)?'previous':'collection',status:'loaded'}));

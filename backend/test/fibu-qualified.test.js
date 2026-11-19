@@ -68,6 +68,7 @@ test('PDF-Fassungen derselben Kartenrechnung brauchen vollständig identische Za
 });
 test('Fortschritt zeigt nach abgeschlossener Nachzuordnung beendet, während echter Veröffentlichung weiter laufend',()=>{
  const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require('node:path').join(__dirname,'../private/fibu.js'),'utf8'),fn=source.slice(source.indexOf('function fibuProgress('),source.indexOf('async function viewFibu(')),progress=vm.runInNewContext(fn+'\nfibuProgress',{esc:String,Date});const job={state:'partial',workProgress:{percent:100,stage:'publish',label:'OneDrive-PDF aktualisieren',startedAt:'2026-10-01T10:00:00Z',updatedAt:'2026-10-01T10:01:00Z'}};
+ assert.match(progress({...job,workProgress:{...job.workProgress,updatedAt:'2026-10-01T18:00:00Z'},events:[{at:'2026-10-01T10:25:00Z',message:'Markierte PDF gespeichert und Text/Seitenzahl verifiziert; Ergebnis: partial'}]}),/Abgeschlossen · Dauer: 25 Min/);
  assert.match(progress(job),/Prüfung beendet/);assert.doesNotMatch(progress(job),/OneDrive-PDF aktualisieren/);assert.match(progress({...job,state:'running'}),/OneDrive-PDF aktualisieren/);
 });
 test('Private Kartenquittung bleibt bis zur begründeten Firmenbestätigung ungeprüft und passt danach anhand der Kartenzeit',()=>{
