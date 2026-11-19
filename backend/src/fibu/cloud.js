@@ -34,16 +34,16 @@ function cloudWorker({store,worker,ms}){
     const sourcePath=(relative?relative+'/':'')+entry.name;
     let {bytes,source}=await ms.driveDownload(owner,job.companyId,sourcePath);
     if(entry===bank&&ms.bankSource)bytes=await ms.bankSource(job,sourcePath,bytes,source,store);
-    const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:sourcePath});return saved;
+    const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:sourcePath,hash:hash(bytes),localPath:saved});return saved;
    }
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
-   const plan=[];let foldersRead=0;
+   const plan=[];let foldersRead=0;job.searchScope={lookbackMonths:3,driveRoot:c.cloud.rootPath,folders:[]};
    async function collect(relative,destination,known,depth=0){
     if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
     if(++foldersRead>80)fail('Mehr als 80 Quellordner. Suche eingrenzen.');
-    const children=known||await ms.driveList(owner,job.companyId,relative);
+    const scope={path:relative,kind:destination===folder?'selected':'previous',depth,status:'reading'};job.searchScope.folders.push(scope);store.save(job);let children;try{children=known||await ms.driveList(owner,job.companyId,relative);scope.status='searched';scope.files=children.filter(supported).length;}catch(e){scope.status=e.graphStatus===404?'missing':'error';store.save(job);throw e;}
     for(const entry of children){
      if(entry.folder&&entry.name.toLowerCase()==='nicht zugewiesene belege')continue;
      if(entry.folder&&depth>=8)fail('Belegsuche auf acht Ordnerebenen begrenzt. Suche eingrenzen.');
@@ -61,9 +61,9 @@ function cloudWorker({store,worker,ms}){
     }
    }
    downloadTotal+=Math.max(0,plan.length-(downloadTotal-1));
-   job.searchScope={lookbackMonths:3,foldersRead,plannedReceipts:plan.length};store.save(job);
+   job.searchScope={...job.searchScope,foldersRead,plannedReceipts:plan.length};store.save(job);
    for(const item of plan)await copyReceipt(item.entry,item.relative,item.destination);
-   if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);downloadTotal+=collected.filter(supported).length;for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
+   if(c.cloud.collectionPath){cleanPath(c.cloud.collectionPath);const scope={path:c.cloud.collectionPath,kind:'collection',depth:0,status:'reading'};job.searchScope.folders.push(scope);try{const collected=await ms.driveList(owner,job.companyId,c.cloud.collectionPath);scope.status='searched';scope.files=collected.filter(supported).length;downloadTotal+=collected.filter(supported).length;for(const entry of collected.filter(supported))await copyReceipt(entry,c.cloud.collectionPath,local.collectionFolder);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;scope.status=e.graphStatus===404?'missing':'error';job.issues.push('OneDrive-Sammelordner: '+(e.status?e.message:'Quelle nicht vollständig lesbar.'));}}
    async function readImported(imported){
     try{const src=await inside(c.root,imported.path),bytes=await fs.readFile(src);if(hash(bytes)!==imported.hash)fail('Importdatei wurde verändert; erneuten Import prüfen.',409);return {src,bytes};}
     catch(e){if(e.code!=='ENOENT'&&e.code!=='ENOTDIR')throw e;}

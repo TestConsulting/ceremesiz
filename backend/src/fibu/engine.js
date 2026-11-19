@@ -40,6 +40,7 @@ function engine({store,config,ms}) {
     const folder=await inside(c.root,job.monthFolderPath,'directory');
     const bank=await inside(folder,job.bankPdfPath),bytes=await fs.readFile(bank);
     if(hash(bytes)!==job.bankHash) fail('Originalbank wurde seit dem Start verändert. Neue Revision erforderlich.');
+    await publishReceipts(job,c);
     const output=await pdf.annotate(bytes,job.transactions);
     const reopened=await pdf.extract(output),original=await pdf.extract(bytes);
     if(reopened.pages.length!==original.pages.length||reopened.text!==original.text)fail('PDF-Prüfung: Text oder Seitenzahl verändert.');
@@ -52,6 +53,12 @@ function engine({store,config,ms}) {
     job.events.push({at:job.lastSuccessfulCheck,message:'Markierte PDF gespeichert und Text/Seitenzahl verifiziert; Ergebnis: '+job.state});
     job.reportPath=await writeVerified(folder,`ASTRA_Pruefbericht_${job.month}_${job.id}.json`,Buffer.from(JSON.stringify({...job,documents:job.documents.map(({text,...d})=>d)},null,2)));
     store.putMonth(job.owner,job.companyId,job.month,{execution:job.execution||'local',bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id},false,job.folderId);
+  }
+  async function publishReceipts(job,c){
+    if(job.execution!=='server'||!ms.publishReceipts)return;
+    try{await ms.publishReceipts(job,c);}catch(e){job.receiptPublication={verified:false,files:[],errors:job.transactions.filter(t=>t.status==='matched').flatMap(t=>t.receipts||[]).map(r=>({hash:r.hash,error:e.message}))};}
+    if(!job.receiptPublication)job.receiptPublication={verified:false,files:[],errors:job.transactions.filter(t=>t.status==='matched').flatMap(t=>t.receipts||[]).map(r=>({hash:r.hash,error:'OneDrive-Ablage nicht bestätigt.'}))};
+    const failed=new Set((job.receiptPublication?.errors||[]).map(e=>e.hash));if(failed.size){job.issues.push('Zugeordnete Belege konnten nicht vollständig im OneDrive-Zielordner verifiziert werden. Betroffene Buchungen bleiben zur Klärung offen.');for(const t of job.transactions)if(t.status==='matched'&&(t.receipts||[]).some(r=>failed.has(r.hash))){t.status='manual';if(t.color==='yellow')t.color=null;t.reason='Beleg gefunden, aber Ablage im OneDrive-Zielordner nicht verifiziert.';}}
   }
   async function exportUnassigned(job,c){await require('./unassigned').createReview(job,c);if(job.execution==='server'&&ms.publishUnassigned)await ms.publishUnassigned(job,c);}
   async function verifyDocument(job,d,body,c){

@@ -34,6 +34,7 @@ function microsoft(config,{vault=null}={}) {
   const bankSync=require('./bank-sync').bankSync(require('./onedrive').oneDrive({graph,config}),canWrite);
   return {
     canWrite,bankSource:bankSync.source,publishBank:bankSync.publish,
+    publishReceipts:(job,c)=>require('./receipt-publication').publish(job,c,require('./onedrive').oneDrive({graph,config}),canWrite),
     publishUnassigned:(job,c)=>require('./unassigned').publishReview(job,c,require('./onedrive').oneDrive({graph,config}),canWrite),
     configured:!!authority,
     connected:(o,c)=>!!session(o,c)?.access_token,

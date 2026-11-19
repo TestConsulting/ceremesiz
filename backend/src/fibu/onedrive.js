@@ -34,6 +34,10 @@ function oneDrive({graph,config}){
    const ext=relative.split('.').pop().toLowerCase();if(ext==='pdf'&&bytes.subarray(0,5).toString()!=='%PDF-'||ext==='png'&&!bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||['jpg','jpeg'].includes(ext)&&!(bytes[0]===255&&bytes[1]===216&&bytes[2]===255))fail('Belegformat stimmt nicht.');
    return graph(owner,company,route(company,relative)+':/content'+(etag?'':'?@microsoft.graph.conflictBehavior=fail'),{method:'PUT',headers:{...(etag?{'If-Match':etag}:{}),'Content-Type':ext==='txt'?'text/plain; charset=utf-8':ext==='pdf'?'application/pdf':ext==='png'?'image/png':'image/jpeg'},body:bytes});
   },
+  async putReceiptFile(owner,company,relative,bytes,parent){
+   cleanPath(relative);cleanPath(parent,{empty:true});if(require('node:path').posix.dirname(relative)!==(parent||'.')||! /\.(pdf|png|jpe?g)$/i.test(relative)||bytes.length>25*1024*1024)fail('Belegziel liegt außerhalb des ausgewählten Monatsordners.');const ext=relative.split('.').pop().toLowerCase();if(ext==='pdf'&&bytes.subarray(0,5).toString()!=='%PDF-'||ext==='png'&&!bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||['jpg','jpeg'].includes(ext)&&!(bytes[0]===255&&bytes[1]===216&&bytes[2]===255))fail('Belegformat stimmt nicht.');
+   return graph(owner,company,route(company,relative)+':/content?@microsoft.graph.conflictBehavior=fail',{method:'PUT',headers:{'Content-Type':ext==='pdf'?'application/pdf':ext==='png'?'image/png':'image/jpeg'},body:bytes});
+  },
   async ensureBackupFolder(owner,company,parent){
    cleanPath(parent,{empty:true});const relative=(parent?parent+'/':'')+'_ASTRA_Originale';
    try{const item=await graph(owner,company,route(company,relative));if(!item.folder||item.remoteItem)fail('Originalsicherung ist kein Ordner.');return relative;}catch(e){if(e.graphStatus!==404)throw e;}

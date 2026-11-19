@@ -3,8 +3,8 @@ const {inside,hash,writeVerified}=require('./core'),{advance}=require('./progres
 async function importMail({job,c,collection,ms,store,event,checkpoint}){
  job.mailDocumentPaths=[];job.mailSummary={messages:0,processed:0,stored:0,reused:0,marked:0,failed:0};
  if(!ms.connected(job.owner,job.companyId)){job.issues.push('E-Post nicht verbunden; keine E-Mail-Ablage.');return;}
- const mailbox=c.mailbox||'epost@testconsulting.de',messages=await ms.list(job.owner,job.companyId,mailbox);
- if(ms.search)for(const ref of require('./mail-references').mailReferences(job.transactions)){checkpoint(job);try{messages.push(...await ms.search(job.owner,job.companyId,mailbox,ref));}catch(e){job.issues.push('Historische Belegsuche: '+e.message);}}
+ const mailbox=c.mailbox||'epost@testconsulting.de';job.searchScope={...job.searchScope,mailbox,mailFolder:'Posteingang',mailStatus:'reading',historicalReferences:[]};const messages=await ms.list(job.owner,job.companyId,mailbox);job.searchScope.mailStatus='searched';
+ if(ms.search)for(const ref of require('./mail-references').mailReferences(job.transactions)){checkpoint(job);try{const found=await ms.search(job.owner,job.companyId,mailbox,ref);messages.push(...found);job.searchScope.historicalReferences.push({reference:ref,status:'searched',messages:found.length});}catch(e){job.searchScope.historicalReferences.push({reference:ref,status:'error'});job.issues.push('Historische Belegsuche: '+e.message);}}
  const unique=[...new Map(messages.map(m=>[m.id,m])).values()];job.mailSummary.messages=unique.length;
  for(const message of unique){
   checkpoint(job);advance(job,store,'mail',job.mailSummary.processed,unique.length);

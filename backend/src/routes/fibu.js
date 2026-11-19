@@ -119,6 +119,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     setImmediate(()=>worker.run(job.id,req.user.id,c));
   });
   router.get('/jobs/:id',(req,res)=>res.json(jobFor(req)));
+  router.post('/jobs/:id/receipts',...write,async(req,res)=>{const job=jobFor(req),c=companyFor(config,req.user,job.companyId);if(config.mode!=='cloud'||job.execution!=='server'||store.hasActive(job.companyId,job.month)||store.isClosed(job.companyId,job.month,job.folderId))fail('Belegablage nur nach einem beendeten, offenen Serverlauf ergänzen.',409);try{await worker.exportResult(job,c);}finally{store.save(job);}res.json({publication:job.receiptPublication});});
   router.post('/jobs/:id/unassigned',...write,async(req,res)=>{const job=jobFor(req),c=companyFor(config,req.user,job.companyId);if(config.mode==='remote'||['queued','running'].includes(job.state))fail('Ordner nach einem beendeten Server-/Lokallauf erstellen.',409);try{await worker.exportUnassigned(job,c);}finally{store.save(job);}res.json({count:job.unassignedReview.count,published:job.unassignedReview.published,webUrl:job.unassignedReview.webUrl||null});});
   router.post('/jobs/:id/documents/:documentId/verify',...write,async(req,res)=>{
     const job=jobFor(req),c=companyFor(config,req.user,job.companyId);
