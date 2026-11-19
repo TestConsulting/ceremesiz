@@ -82,7 +82,7 @@ function engine({store,config,ms}) {
       const collection=await inside(c.root,c.collectionFolder,'directory');
       event(job,'Bankkonto und Auszugszeitraum geprüft.');
       advance(job,store,'mail');
-      try {await importMail(job,c,collection);}catch(e){job.issues.push('E-Post-Teilfehler: '+e.message);}
+      try {await importMail(job,c,await inside(c.root,c.mailCollectionFolder||c.collectionFolder,'directory'));}catch(e){job.issues.push('E-Post-Teilfehler: '+e.message);}
       const pending=path.join(job.monthFolderPath,'00_Nicht zugewiesene Belege');const scan=[];for(const folder of new Set([job.monthFolderPath,collection,...(await fs.stat(pending).then(s=>s.isDirectory()).catch(()=>false)?[pending]:[])]))for(const entry of await fs.readdir(folder,{withFileTypes:true}))scan.push({folder,entry});
       for(const file of job.mailDocumentPaths||[])if(!scan.some(s=>path.join(s.folder,s.entry.name)===file))scan.push({folder:path.dirname(file),entry:{name:path.basename(file),isFile:()=>true},mail:true});
       let scanned=0;for(const {folder,entry,mail} of scan) {
@@ -100,7 +100,7 @@ function engine({store,config,ms}) {
           }catch(e){job.issues.push(entry.name+': '+e.message);}
         }
       // Include previously verified receipt paths, which now bear _Astra and are excluded from fresh scans.
-      if(previous?.bankHash===job.bankHash) for(const old of previous.transactions||[]) for(const r of old.receipts||[]) {
+      if(job.execution!=='server'&&previous?.bankHash===job.bankHash) for(const old of previous.transactions||[]) for(const r of old.receipts||[]) {
           try {const file=await inside(c.root,r.path);if(hash(await fs.readFile(file))===r.hash&&!job.documents.some(d=>d.hash===r.hash)){const d=await document(file,c,{source:'previous'});job.documents.push(require('./review').applyReview(d,store.documentReview(owner,job.companyId,d.hash),c));}}
         catch{job.issues.push('Früherer Beleg nicht mehr verifiziert: '+r.name);}
       }

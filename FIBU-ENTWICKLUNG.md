@@ -1,3 +1,7 @@
+## Suchbereich (direkter Vormonat)
+
+Neue Serverläufe durchsuchen den gewählten Belegordner und genau den direkten Vormonat, einschließlich Unterverzeichnissen bis acht Ebenen. Die Oberfläche fasst Unterordner unter ihrem Elternordner zusammen und kürzt die Anzeige ab `00. FiBu …`. Vollständige Suchpfade bleiben im Prüfbericht. OneDrive-Arbeitskopien werden pro Lauf getrennt gehalten, damit frühere Suchläufe keine zusätzlichen älteren Monatsordner einschleusen. Das E-Post-Archiv und explizite Sammelquellen bleiben eigenständige Quellen.
+
 ## Gemeinsame FiBu und konfigurierbare Regeln (19.11.2026)
 
 Alle angemeldeten Portalbenutzer teilen die eingerichteten FiBu-Firmen und deren Einträge, Läufe, Belege und Regeln. Es gibt keine zusätzliche FiBu-Benutzerfreigabe. Die bestehende Microsoft-Firmenverbindung wird über den stabilen technischen Arbeitsbereichsinhaber verwendet; die verschlüsselten Token werden nicht zwischen Konten kopiert. Anmeldung und CSRF-/Origin-Prüfungen bleiben aktiv.

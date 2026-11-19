@@ -16,8 +16,8 @@ function cloudWorker({store,worker,ms}){
    if(! /\.pdf$/i.test(job.sourceBankName)||/_Astra(?:_|\.)/i.test(path.posix.basename(job.sourceBankName)))fail('Original-Bank-PDF wählen.',400);
    await fs.mkdir(c.root,{recursive:true,mode:0o700});
    const ownerRoot=path.join(c.root,String(owner));await fs.mkdir(ownerRoot,{recursive:true,mode:0o700});await inside(c.root,ownerRoot,'directory');
-   const local={...c,root:ownerRoot,collectionFolder:path.join(ownerRoot,'collection')};
-   const folder=path.join(ownerRoot,'jobs',id,...month.split('-'));await fs.mkdir(folder,{recursive:true,mode:0o700});await fs.mkdir(local.collectionFolder,{recursive:true,mode:0o700});
+   const local={...c,root:ownerRoot,mailCollectionFolder:path.join(ownerRoot,'collection')};
+   const folder=path.join(ownerRoot,'jobs',id,...month.split('-'));await fs.mkdir(folder,{recursive:true,mode:0o700});local.collectionFolder=path.join(folder,'_sources');await fs.mkdir(local.collectionFolder,{recursive:true,mode:0o700});await fs.mkdir(local.mailCollectionFolder,{recursive:true,mode:0o700});
    const entries=await ms.driveList(owner,job.companyId,job.sourceMonthPath);
    const bankPath=(job.sourceBankIsDrivePath||job.sourceBankName.includes('/'))?job.sourceBankName:job.sourceMonthPath+'/'+job.sourceBankName;
    const bankFolder=path.posix.dirname(bankPath)==='.'?'':path.posix.dirname(bankPath);
@@ -39,7 +39,7 @@ function cloudWorker({store,worker,ms}){
    job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
-   const plan=[];let foldersRead=0;job.searchScope={lookbackMonths:3,driveRoot:c.cloud.rootPath,folders:[]};
+   const plan=[];let foldersRead=0;job.searchScope={lookbackMonths:1,driveRoot:c.cloud.rootPath,folders:[]};
    async function collect(relative,destination,known,depth=0){
     if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
     if(++foldersRead>80)fail('Mehr als 80 Quellordner. Suche eingrenzen.');
@@ -54,7 +54,7 @@ function cloudWorker({store,worker,ms}){
    await collect(job.sourceMonthPath,folder,entries);
    if(c.cloud.monthBasePath){
     const date=new Date(month+'-01T12:00:00Z');
-    for(let back=1;back<=3;back++){
+    for(let back=1;back<=1;back++){
      const d=new Date(date);d.setUTCMonth(d.getUTCMonth()-back);const relative=c.cloud.monthBasePath+'/'+d.getUTCFullYear()+'/'+String(d.getUTCMonth()+1).padStart(2,'0');
      if(relative===job.sourceMonthPath)continue;
      try{await collect(relative,local.collectionFolder);}catch(e){if(e.graphStatus===404){job.events.push({at:new Date().toISOString(),message:'Kein Belegordner für '+relative});}else throw e;}
