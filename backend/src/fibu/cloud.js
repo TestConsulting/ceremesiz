@@ -6,9 +6,9 @@ function cloudWorker({store,worker,ms}){
  const running=new Set();
  async function run(id,owner,c){
   if(running.has(id))return;running.add(id);
-  let job=store.get(owner,id);
+  let job=store.get(owner,id);if(job.paused&&!job.pauseRequested){job.pausedMs=(job.pausedMs||0)+Math.max(0,Date.now()-Date.parse(job.pauseStartedAt));job.paused=false;job.pauseStartedAt=null;store.save(job);}
   try{
-   advance(job,store,'download');
+   await require('./pause').checkpoint(job,store);advance(job,store,'download');
    job.state='running';job.progress='OneDrive-Dateien werden direkt auf dem Server geladen.';store.save(job);
    if(!ms.connected(owner,job.companyId))fail('Microsoft für OneDrive und E-Post verbinden.',409);
    cleanPath(job.sourceMonthPath,{empty:true});const month=job.month;if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))fail('Gültigen Prüfmonat wählen.',400);
@@ -27,7 +27,7 @@ function cloudWorker({store,worker,ms}){
    const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!d.name.toLowerCase().startsWith(markedBankPrefix.toLowerCase())&&!/ASTRA_Pruefbericht/i.test(d.name);
    const snapshots=[];let total=0,downloaded=0,downloadTotal=entries.filter(d=>supported(d)&&d.name!==bank.name).length+1;
    async function copy(entry,relative,destination){
-    if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
+    await require('./pause').checkpoint(job,store);
     if(/[\\/\x00-\x1f]/.test(entry.name)||entry.name==='.'||entry.name==='..')fail('Ungültiger OneDrive-Dateiname.');
     total+=entry.size;if(total>100*1024*1024)fail('OneDrive-Quellen über 100 MB. Monat/Sammelordner eingrenzen.');
     advance(job,store,'download',downloaded++,downloadTotal);
@@ -41,7 +41,7 @@ function cloudWorker({store,worker,ms}){
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
    const plan=[];let foldersRead=0;job.searchScope={lookbackMonths:1,driveRoot:c.cloud.rootPath,folders:[]};
    async function collect(relative,destination,known,depth=0){
-    if(store.get(owner,id)?.cancelRequested)fail('Vor Verarbeitung abgebrochen.',409);
+    await require('./pause').checkpoint(job,store);
     if(++foldersRead>80)fail('Mehr als 80 Quellordner. Suche eingrenzen.');
     const scope={path:relative,kind:destination===folder?'selected':'previous',depth,status:'reading'};job.searchScope.folders.push(scope);store.save(job);let children;try{children=known||await ms.driveList(owner,job.companyId,relative);scope.status='searched';scope.files=children.filter(supported).length;}catch(e){scope.status=e.graphStatus===404?'missing':'error';store.save(job);throw e;}
     for(const entry of children){
@@ -85,6 +85,6 @@ function cloudWorker({store,worker,ms}){
   }catch(e){job=store.get(owner,id);job.issues.push(e.status?e.message:'OneDrive-Verarbeitung fehlgeschlagen. Verbindung und Berechtigungen prüfen.');job.progress='Serverprüfung angehalten';store.save(job,job.cancelRequested?'cancelled':'waiting_for_user');}
   finally{running.delete(id);}
  }
- return {run};
+ return {run,running};
 }
 module.exports={cloudWorker};

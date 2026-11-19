@@ -139,6 +139,15 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     catch(e){job.issues.push('Belegprüfung unterbrochen; gespeicherte Bestätigung und Ausgabe prüfen.');store.save(job,'partial');throw e;}
     finally{worker.running.delete(job.id);}
   });
+  router.post('/jobs/:id/pause',...write,(req,res)=>{
+    const job=jobFor(req);companyFor(config,req.user,job.companyId);if(config.mode!=='cloud'||!['queued','running'].includes(job.state)||job.cancelRequested)fail('Nur laufende Serverprüfungen können pausiert werden.',409);
+    res.json(store.control(job,true));
+  });
+  router.post('/jobs/:id/resume',...write,(req,res)=>{
+    const job=jobFor(req),c=companyFor(config,req.user,job.companyId);if(config.mode!=='cloud'||!['queued','running'].includes(job.state)||!job.pauseRequested||job.cancelRequested)fail('Dieser Lauf ist nicht pausiert.',409);
+    const saved=store.control(job,false);res.json(saved);
+    if(!cloud.running.has(job.id)&&!worker.running.has(job.id)){saved.documents=[];saved.mailDocumentPaths=[];saved.events.push({at:new Date().toISOString(),message:'Fortsetzen nach Dienstneustart: Quellen werden erneut geprüft; verifizierte Ablagen werden wiederverwendet.'});store.save(saved);setImmediate(()=>cloud.run(job.id,job.owner,c));}
+  });
   router.post('/jobs/:id/cancel',...write,(req,res)=>{
     const job=jobFor(req);if(['queued','running'].includes(job.state)){job.cancelRequested=true;store.save(job);}res.json(job);
   });

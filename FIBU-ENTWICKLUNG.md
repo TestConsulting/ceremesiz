@@ -1,3 +1,7 @@
+## Stabile Anzeige, Pause und Regelübersicht
+
+Die FiBu-Übersicht aktualisiert bestehende DOM-Knoten statt bei jedem Polling die ganze Seite und das Stylesheet auszutauschen. Die Detailansicht erhält PDF-Frame, Fokus und aufgeklappte Bereiche. Serverjobs können über Pausieren/Fortsetzen an sicheren Kontrollpunkten angehalten werden; laufende Dateioperationen werden abgeschlossen. Pausierte Jobs reservieren Firma/Monat weiterhin. Pause bleibt über Dienstneustarts erhalten; beim Fortsetzen nach Neustart werden Quellen im selben Job erneut geprüft und verifizierte Ablagen wiederverwendet. Pausenzeiten zählen nicht zur aktiven Laufzeit. Die Regelübersicht bietet kompakte nummerierte Karten, Farbbadges, Suche und eine dauerhaft erreichbare Speicherleiste.
+
 ## Suchbereich (direkter Vormonat)
 
 Neue Serverläufe durchsuchen den gewählten Belegordner und genau den direkten Vormonat, einschließlich Unterverzeichnissen bis acht Ebenen. Die Oberfläche fasst Unterordner unter ihrem Elternordner zusammen und kürzt die Anzeige ab `00. FiBu …`. Vollständige Suchpfade bleiben im Prüfbericht. OneDrive-Arbeitskopien werden pro Lauf getrennt gehalten, damit frühere Suchläufe keine zusätzlichen älteren Monatsordner einschleusen. Das E-Post-Archiv und explizite Sammelquellen bleiben eigenständige Quellen.

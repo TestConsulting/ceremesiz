@@ -26,7 +26,7 @@ function engine({store,config,ms}) {
     return {month,monthFolderPath:folder,bankPdfPath:bank,bankHash:hash(bytes),...parsed};
   }
   const event=(job,message)=>{job.events.push({at:new Date().toISOString(),message});job.progress=message;store.save(job);};
-  const checkpoint=job=>{if(store.get(job.owner,job.id)?.cancelRequested) throw Object.assign(new Error('Vom Nutzer abgebrochen; bereits erfolgte Ablagen stehen im Protokoll.'),{cancelled:true});};
+  const checkpoint=job=>require('./pause').checkpoint(job,store);
   async function document(file,c,source={}) {
     const bytes=await fs.readFile(file),digest=hash(bytes),name=path.basename(file);
     const isPdf=/\.pdf$/i.test(file);
@@ -41,16 +41,16 @@ function engine({store,config,ms}) {
     const bank=await inside(folder,job.bankPdfPath),bytes=await fs.readFile(bank);
     if(hash(bytes)!==job.bankHash) fail('Originalbank wurde seit dem Start verändert. Neue Revision erforderlich.');
     require('./rules').apply(job,c);
-    await publishReceipts(job,c);
+    await checkpoint(job);await publishReceipts(job,c);
     const output=await pdf.annotate(bytes,job.transactions);
     const reopened=await pdf.extract(output),original=await pdf.extract(bytes);
     if(reopened.pages.length!==original.pages.length||reopened.text!==original.text)fail('PDF-Prüfung: Text oder Seitenzahl verändert.');
     job.markedPdfPath=await writeVerified(folder,astraName(path.basename(bank)),output);
-    if(job.execution==='server'&&ms.publishBank){try{await ms.publishBank(job,c,store);}catch(e){job.issues.push('OneDrive-PDF konnte nicht aktualisiert werden: '+(e.status?e.message:'Verbindung prüfen.'));}}
-    try{await exportUnassigned(job,c);}catch{job.issues.push('Ordner für nicht zugewiesene Belege konnte nicht vollständig erstellt werden. Originaldateien bleiben erhalten.');}
+    await checkpoint(job);if(job.execution==='server'&&ms.publishBank){try{await ms.publishBank(job,c,store);}catch(e){job.issues.push('OneDrive-PDF konnte nicht aktualisiert werden: '+(e.status?e.message:'Verbindung prüfen.'));}}
+    await checkpoint(job);try{await exportUnassigned(job,c);}catch{job.issues.push('Ordner für nicht zugewiesene Belege konnte nicht vollständig erstellt werden. Originaldateien bleiben erhalten.');}
     job.lastSuccessfulCheck=new Date().toISOString();
     job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
-    advance(job,store,'done');
+    await checkpoint(job);advance(job,store,'done');
     job.events.push({at:job.lastSuccessfulCheck,message:'Markierte PDF gespeichert und Text/Seitenzahl verifiziert; Ergebnis: '+job.state});
     job.reportPath=await writeVerified(folder,`ASTRA_Pruefbericht_${job.month}_${job.id}.json`,Buffer.from(JSON.stringify({...job,documents:job.documents.map(({text,...d})=>d)},null,2)));
     store.putMonth(job.owner,job.companyId,job.month,{execution:job.execution||'local',bankHash:job.bankHash,transactions:job.transactions,lastSuccessfulCheck:job.lastSuccessfulCheck,jobId:job.id},false,job.folderId);
@@ -73,7 +73,7 @@ function engine({store,config,ms}) {
     if(running.has(id))return;
     running.add(id);let job=store.get(owner,id);
     try {
-      store.save(job,'running');job.state='running';checkpoint(job);
+      store.save(job,'running');job.state='running';await checkpoint(job);
       const checked=await validate(c,job);
       if(checked.bankHash!==job.bankHash)fail('Bankdatei wurde nach Auftrag geändert.');
       job.transactions=checked.transactions;job.controls=checked.controls||null;job.issues.push(...checked.issues);
@@ -87,7 +87,7 @@ function engine({store,config,ms}) {
       for(const file of job.mailDocumentPaths||[])if(!scan.some(s=>path.join(s.folder,s.entry.name)===file))scan.push({folder:path.dirname(file),entry:{name:path.basename(file),isFile:()=>true},mail:true});
       let scanned=0;for(const {folder,entry,mail} of scan) {
           advance(job,store,'documents',scanned++,scan.length);
-          checkpoint(job);
+          await checkpoint(job);
           if(!entry.isFile()||! /\.(pdf|jpe?g|png)$/i.test(entry.name)||/ASTRA_Pruefbericht/i.test(entry.name)||entry.name.startsWith(path.parse(job.bankPdfPath).name+'_Astra'))continue;
           const file=await inside(c.root,path.join(folder,entry.name));
           if(file===job.bankPdfPath)continue;
@@ -112,7 +112,7 @@ function engine({store,config,ms}) {
       const groups=allocations(job.transactions.filter(t=>!classify(t,c).skipReceipt&&classify(t,c).color!=='purple'),matchDocuments);
       let matched=0;for(const t of job.transactions) {
         advance(job,store,'match',matched++,job.transactions.length);
-        checkpoint(job);Object.assign(t,classify(t,c));
+        await checkpoint(job);Object.assign(t,classify(t,c));
         if(t.color==='purple'||t.skipReceipt){t.status='not_required';t.receipts=[];t.reason=t.rule;continue;}
         const old=previous?.bankHash===job.bankHash&&previous.transactions?.find(x=>x.id===t.id);
         if(old?.manualDecision==='unmatched'){t.manualDecision='unmatched';t.status='manual';t.reason='Manuelle Aufhebung erhalten';continue;}
@@ -132,7 +132,7 @@ function engine({store,config,ms}) {
           if(group)t.reason='Referenzbasierte Teil-/Sammelzahlung, Gesamtsumme geprüft';
         } else if(docs.length) {t.status='manual';t.reason=shared?'Beleg passt zu mehreren Buchungen':'Mehrdeutige Belege';}
       }
-      event(job,'Zuordnungen geprüft; markierte Kopie wird gespeichert.');checkpoint(job);
+      event(job,'Zuordnungen geprüft; markierte Kopie wird gespeichert.');await checkpoint(job);
       await exportResult(job,c);
       advance(job,store,'done');
       job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';

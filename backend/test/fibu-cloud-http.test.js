@@ -18,7 +18,14 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  assert.equal((await api('/months',params)).status,200);assert.equal((await(await api('/months?companyId=tc')).json()).months[0].storageMode,'cloud');
  assert.equal((await api('/jobs',{...params,bankPdfPath:'C:/Windows/private.pdf'})).status,400);
  assert.equal((await api('/months',{...params,bankPdfPath:'../Other/Bank.pdf'})).status,400);
+ let downloadRelease,downloadEntered;const entered=new Promise(r=>downloadEntered=r),gate=new Promise(r=>downloadRelease=r),originalDownload=ms.driveDownload;let downloads=0;ms.driveDownload=async(...args)=>{downloads++;if(downloads===1){downloadEntered();await gate;}return originalDownload(...args);};
  const started=await api('/jobs',params);assert.equal(started.status,202);const job=await started.json();let result;
+ await entered;assert.equal((await fetch(base+'/api/fibu/jobs/'+job.id+'/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,401);
+ assert.equal((await fetch(base+'/api/fibu/jobs/'+job.id+'/pause',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'})).status,403);
+ assert.equal((await api('/jobs/'+job.id+'/pause',{})).status,200);downloadRelease();
+ for(let i=0;i<100;i++){result=await(await api('/jobs/'+job.id)).json();if(result.paused)break;await new Promise(r=>setTimeout(r,20));}
+ assert.equal(result.paused,true);const pausedDownloads=downloads;await new Promise(r=>setTimeout(r,80));assert.equal(downloads,pausedDownloads);assert.equal((await api('/jobs/'+job.id+'/resume',{})).status,200);
+
  const until=Date.now()+15000;while(Date.now()<until){result=await(await api('/jobs/'+job.id)).json();if(!['queued','running'].includes(result.state))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(result.execution,'server');assert.equal(result.state,'completed');assert.equal(result.transactions[0].status,'matched');assert.ok(result.markedPdfPath);assert.equal(result.sourceMonthPath,'Belege/Oktober');
  const original=Buffer.from(await(await api('/jobs/'+job.id+'/files/original')).arrayBuffer());assert.deepEqual(original,bank);

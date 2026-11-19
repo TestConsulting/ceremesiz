@@ -4,13 +4,13 @@ async function importMail({job,c,collection,ms,store,event,checkpoint}){
  job.mailDocumentPaths=[];job.mailSummary={messages:0,processed:0,stored:0,reused:0,marked:0,failed:0};
  if(!ms.connected(job.owner,job.companyId)){job.issues.push('E-Post nicht verbunden; keine E-Mail-Ablage.');return;}
  const mailbox=c.mailbox||'epost@testconsulting.de';job.searchScope={...job.searchScope,mailbox,mailFolder:'Posteingang',mailStatus:'reading',historicalReferences:[]};const messages=await ms.list(job.owner,job.companyId,mailbox);job.searchScope.mailStatus='searched';
- if(ms.search)for(const ref of require('./mail-references').mailReferences(job.transactions.filter(t=>!require('./core').classify(t,c).skipReceipt&&require('./core').classify(t,c).color!=='purple'))){checkpoint(job);try{const found=await ms.search(job.owner,job.companyId,mailbox,ref);messages.push(...found);job.searchScope.historicalReferences.push({reference:ref,status:'searched',messages:found.length});}catch(e){job.searchScope.historicalReferences.push({reference:ref,status:'error'});job.issues.push('Historische Belegsuche: '+e.message);}}
+ if(ms.search)for(const ref of require('./mail-references').mailReferences(job.transactions.filter(t=>!require('./core').classify(t,c).skipReceipt&&require('./core').classify(t,c).color!=='purple'))){await checkpoint(job);try{const found=await ms.search(job.owner,job.companyId,mailbox,ref);messages.push(...found);job.searchScope.historicalReferences.push({reference:ref,status:'searched',messages:found.length});}catch(e){job.searchScope.historicalReferences.push({reference:ref,status:'error'});job.issues.push('Historische Belegsuche: '+e.message);}}
  const unique=[...new Map(messages.map(m=>[m.id,m])).values()];job.mailSummary.messages=unique.length;
  for(const message of unique){
-  checkpoint(job);advance(job,store,'mail',job.mailSummary.processed,unique.length);
+  await checkpoint(job);advance(job,store,'mail',job.mailSummary.processed,unique.length);
   const previousFiles=store.mail(job.owner,job.companyId,message.id)?.files||[],files=[],issues=[];let attachments=[];
   try{attachments=await ms.attachments(job.owner,job.companyId,mailbox,message.id);}catch(e){issues.push('Anhänge konnten nicht geladen werden: '+e.message);}
-  for(const a of attachments){checkpoint(job);try{
+  for(const a of attachments){await checkpoint(job);try{
    if(a['@odata.type']!=='#microsoft.graph.fileAttachment'||typeof a.contentBytes!=='string')throw Error('Anhang nicht als Datei herunterladbar.');
    const encoded=a.contentBytes.replace(/\s/g,'');if(encoded.length>36*1024*1024||encoded.length%4!==0||/[^A-Za-z0-9+/=]/.test(encoded))throw Error('Anhang enthält ungültige oder zu große Download-Daten.');
    const bytes=Buffer.from(encoded,'base64');if(bytes.toString('base64')!==encoded)throw Error('Anhang enthält ungültige Base64-Daten.');if(bytes.length>25*1024*1024)throw Error('Anhang über 25 MB; Ablage nicht erfolgt.');const digest=hash(bytes);

@@ -20,7 +20,7 @@ function createStore(db) {
   const get = (owner,id) => { const r=db.prepare('SELECT * FROM fibu_jobs WHERE id=? AND owner=?').get(id,owner); return r ? {...JSON.parse(r.payload),id:r.id,state:r.state,created:r.created,updated:r.updated}:null; };
   const save = (job,state=job.state) => {
     const now=new Date().toISOString();
-    job.cancelRequested=!!(job.cancelRequested||get(job.owner,job.id)?.cancelRequested);
+    const stored=get(job.owner,job.id);job.cancelRequested=!!(job.cancelRequested||stored?.cancelRequested);job.pauseRequested=stored?.pauseRequested===true;
     db.prepare('UPDATE fibu_jobs SET state=?,payload=?,updated=? WHERE id=? AND owner=?').run(state,JSON.stringify({...job,state}),now,job.id,job.owner);
     return get(job.owner,job.id);
   };
@@ -44,7 +44,7 @@ function createStore(db) {
     db.prepare('INSERT INTO fibu_jobs VALUES(?,?,?,?,?,?,?,?)').run(id,owner,params.companyId,params.month,'queued',JSON.stringify(job),now,now);
     return get(owner,id);
   });
-  return { get,save,month,putMonth,enqueue,isClosed,hasActive,
+  return { control:(job,paused)=>{db.prepare("UPDATE fibu_jobs SET payload=json_set(payload,'$.pauseRequested',json(?)) WHERE id=? AND owner=?").run(paused?'true':'false',job.id,job.owner);return get(job.owner,job.id);},get,save,month,putMonth,enqueue,isClosed,hasActive,
     imports:(owner,company)=>db.prepare('SELECT payload FROM fibu_imports WHERE owner=? AND company=?').all(owner,company).map(r=>JSON.parse(r.payload)),
     putImport:(owner,company,digest,payload)=>db.prepare('INSERT INTO fibu_imports VALUES(?,?,?,?) ON CONFLICT(owner,company,digest) DO UPDATE SET payload=excluded.payload').run(owner,company,digest,JSON.stringify(payload)),
     documentReview:(owner,company,digest)=>{const r=db.prepare('SELECT payload FROM fibu_document_reviews WHERE owner=? AND company=? AND digest=?').get(owner,company,digest);return r?JSON.parse(r.payload):null;},
@@ -64,7 +64,7 @@ function createStore(db) {
         if(changed)db.prepare('UPDATE fibu_mail SET payload=? WHERE owner=? AND company=? AND message=?').run(JSON.stringify(data),owner,company,row.message);
       }
     },
-    recover:()=>db.prepare("UPDATE fibu_jobs SET state='partial',payload=json_set(payload,'$.progress','Dienst wurde unterbrochen; neuer manueller Lauf erforderlich.','$.issues',json('[\"Dienstunterbrechung: Ablagen vor erneutem Lauf prüfen\"]')) WHERE state IN ('queued','running')").run()
+    recover:()=>db.prepare("UPDATE fibu_jobs SET state='partial',payload=json_set(payload,'$.progress','Dienst wurde unterbrochen; neuer manueller Lauf erforderlich.','$.issues',json('[\"Dienstunterbrechung: Ablagen vor erneutem Lauf prüfen\"]')) WHERE state IN ('queued','running') AND COALESCE(json_extract(payload,'$.pauseRequested'),0)=0").run()
   };
 }
 module.exports={createStore};
