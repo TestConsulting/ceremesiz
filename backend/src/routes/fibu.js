@@ -11,6 +11,7 @@ const {inside,monthFromFolder,hash,fail,classify,writeVerified}=require('../fibu
 module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   const uiVersion=require('../fibu/ui-version')();
   const router=express.Router(),store=require('../fibu/shared-store').sharedStore(db,createStore(db));
+  const setup=require('../fibu/company-setup').companySetup(db,config);setup.restore();
   const rules=require('../fibu/rules').ruleStore(db);
   const companyFor=(config,user,id,options)=>rules.effective(id,baseCompanyFor(config,user,id,options));
   ms=ms||microsoft(config,config.mode==='cloud'?{vault:require('../fibu/token-vault').tokenVault(db),resolveOwner:store.primaryOwner}:{});
@@ -19,6 +20,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   store.recover();
   router.use(requireAuthApi,(req,res,next)=>{res.set({'Cache-Control':'no-store','X-FiBu-UI-Version':uiVersion});next();});
   const write=[requireSameOriginJson(allowedOrigins),requireCsrf];
+  router.post('/setup/immo',...write,async(req,res)=>{if(req.body?.confirmCompanySetup!==true)fail('Freigabe der AC-Immo-Einrichtung erforderlich.',400);const value=setup.prepare(req.body);await fs.mkdir(value.root,{recursive:true,mode:0o700});res.status(201).json(setup.install(value,req.user.id));});
   router.get('/onedrive/:companyId',async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);if(config.mode!=='cloud')fail('Direkter OneDrive-Zugriff nicht aktiviert.',409);const relative=req.query.path??c.cloud.monthBasePath??'';require('../fibu/onedrive').cleanPath(relative,{empty:true});res.json({path:relative,entries:await ms.driveList(req.user.id,req.params.companyId,relative),...(ms.driveFolder?await ms.driveFolder(req.user.id,req.params.companyId,relative):{})});});
   router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
   router.post('/imports/:companyId',...write,express.json({limit:'36mb'}),async(req,res)=>{
@@ -53,7 +55,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     let enabled=false,canConnect=false;try{companyFor(config,req.user,id);enabled=true;}catch{}
     try{companyFor(config,req.user,id,{allowDisabled:true});canConnect=true;}catch{}
     const seen=canConnect?db.prepare('SELECT seen FROM fibu_runner_state WHERE company=?').get(id)?.seen:null;
-    return {id,name,enabled,canConnect,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,canWrite:canConnect&&!!ms.canWrite?.(req.user.id,id),connected:canConnect&&ms.connected(req.user.id,id)};
+    return {id,name,enabled,canConnect,mailEnabled:config.companies?.[id]?.mailEnabled!==false,maxBankStatements:config.companies?.[id]?.bankAccounts?.length||1,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,canWrite:canConnect&&!!ms.canWrite?.(req.user.id,id),connected:canConnect&&ms.connected(req.user.id,id)};
   })}));
   router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);const all=store.folders(req.user.id,req.query.companyId,{includeHidden:true}).filter(m=>config.mode!=='cloud'||m.storageMode==='cloud');res.json({months:all.filter(m=>!m.removedAt),removed:all.filter(m=>m.removedAt).map(({id,name,label,month,removedAt})=>({id,name,label,month,removedAt}))});});
   router.get('/rules/:companyId',(req,res)=>{const c=baseCompanyFor(config,req.user,req.params.companyId);res.json(rules.get(req.params.companyId,c));});
@@ -61,7 +63,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.post('/months/:id/completion',...write,(req,res)=>{const company=req.body.companyId;companyFor(config,req.user,company);if(typeof req.body.complete!=='boolean')fail('Status vollständig angeben.',400);const entry=store.folders(req.user.id,company).find(m=>m.id===req.params.id);if(!entry)fail('FiBu-Eintrag nicht gefunden.',404);if(store.profileActive(req.user.id,company,entry.id))fail('Laufenden Prüflauf zuerst beenden.',409);store.putFolder(req.user.id,company,entry.id,{...entry,completed:req.body.complete,completedAt:new Date().toISOString(),completedBy:req.user.email});res.json({completed:req.body.complete});});
   router.get('/settings/:companyId',(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId);
-    res.json({mailbox:c.mailbox||'epost@testconsulting.de',mode:config.mode,pilotMode:c.pilotMode===true,ocrEnabled:c.ocrEnabled===true,greenCounterparties:(c.ignoreRules||[]).filter(r=>r.enabled&&r.color==='green').map(r=>r.label),payrollExceptions:c.payrollExceptions===true,mailStorage:config.mode==='cloud'?'privateServer':'configuredCollection',collectionSource:config.mode==='cloud'?(c.cloud.collectionPath?[c.cloud.rootPath,c.cloud.collectionPath].filter(Boolean).join('/'):null):c.collectionFolder});
+    res.json({mailEnabled:c.mailEnabled!==false,mailbox:c.mailbox||'epost@testconsulting.de',mode:config.mode,pilotMode:c.pilotMode===true,ocrEnabled:c.ocrEnabled===true,greenCounterparties:(c.ignoreRules||[]).filter(r=>r.enabled&&r.color==='green').map(r=>r.label),payrollExceptions:c.payrollExceptions===true,mailStorage:config.mode==='cloud'?'privateServer':'configuredCollection',collectionSource:config.mode==='cloud'?(c.cloud.collectionPath?[c.cloud.rootPath,c.cloud.collectionPath].filter(Boolean).join('/'):null):c.collectionFolder});
   });
   router.post('/months/:id/remove',...write,(req,res)=>{
     const b=req.body;companyFor(config,req.user,b.companyId);
@@ -89,7 +91,8 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     let folderUrl='';if(b.folderUrl){try{const u=new URL(b.folderUrl);if(u.protocol!=='https:'||u.username||u.password)throw Error();folderUrl=u.href;}catch{fail('Nur gültige HTTPS-Ordnerlinks erlauben.',400);}}
     if(config.mode==='local')await inside(c.root,b.monthFolderPath,'directory');
     if(config.mode==='cloud'){require('../fibu/onedrive').cleanPath(b.monthFolderPath,{empty:true});require('../fibu/onedrive').cleanPath(b.bankPdfPath);if(!/\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-PDF aus OneDrive wählen.',400);}
-    const saved={id:folderId,name:b.name?.trim()||existing?.name||(existing?undefined:'FiBu '+month.slice(5)+'/'+month.slice(0,4)+(b.label?' · '+b.label.trim():'')),createdAt:existing?.createdAt||new Date().toISOString(),label:b.label?.trim()||existing?.label||'',companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankDrivePath:config.mode==='cloud'&&b.bankDrivePath===true,folderUrl,storageMode:config.mode};
+    const bankPdfPaths=config.mode==='cloud'&&b.bankPdfPaths?require('../fibu/statements').paths(b.bankPdfPaths,b.bankPdfPath):undefined;if(bankPdfPaths&&(b.bankDrivePath!==true||bankPdfPaths[0]!==b.bankPdfPath||bankPdfPaths.length>(c.bankAccounts?.length||1)))fail('Auswahl stimmt nicht mit den Firmenkonten überein.',400);
+    const saved={bankPdfPaths,id:folderId,name:b.name?.trim()||existing?.name||(existing?undefined:'FiBu '+month.slice(5)+'/'+month.slice(0,4)+(b.label?' · '+b.label.trim():'')),createdAt:existing?.createdAt||new Date().toISOString(),label:b.label?.trim()||existing?.label||'',companyId:b.companyId,month,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankDrivePath:config.mode==='cloud'&&b.bankDrivePath===true,folderUrl,storageMode:config.mode};
     store.putFolder(req.user.id,b.companyId,folderId,saved);res.status(b.create===true?201:200).json(saved);
   });
   router.post('/months/:id/name',...write,(req,res)=>{
@@ -105,12 +108,13 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.post('/jobs',...write,async(req,res)=>{
     const b=req.body,c=companyFor(config,req.user,b.companyId),month=config.mode==='cloud'&&/^20\d{2}-(0[1-9]|1[0-2])$/.test(b.month)?b.month:monthFromFolder(b.monthFolderPath);
     if(b.month&&b.month!==month)fail('Abweichender Monat.',400);
-    if(b.folderId){const profile=store.folders(req.user.id,b.companyId).find(m=>m.id===b.folderId);if(!profile)fail('FiBu-Eintrag nicht gefunden.',404);if(profile.month!==month||profile.monthFolderPath!==b.monthFolderPath||profile.bankPdfPath!==b.bankPdfPath||(profile.bankDrivePath===true)!==(b.bankDrivePath===true))fail('FiBu-Pfade wurden geändert. Übersicht neu laden.',409);}
+    if(b.folderId){const profile=store.folders(req.user.id,b.companyId).find(m=>m.id===b.folderId);if(!profile)fail('FiBu-Eintrag nicht gefunden.',404);if(profile.month!==month||profile.monthFolderPath!==b.monthFolderPath||profile.bankPdfPath!==b.bankPdfPath||JSON.stringify(profile.bankPdfPaths)!==JSON.stringify(b.bankPdfPaths)||(profile.bankDrivePath===true)!==(b.bankDrivePath===true))fail('FiBu-Pfade wurden geändert. Übersicht neu laden.',409);}
     if(config.mode==='cloud'){
       require('../fibu/onedrive').cleanPath(b.monthFolderPath,{empty:true});
       require('../fibu/onedrive').cleanPath(b.bankPdfPath);if(! /\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-Bank-PDF wählen.',400);
       if(!ms.connected(req.user.id,b.companyId))fail('Microsoft zuerst verbinden.',409);
-      const job=store.enqueue(req.user.id,{requestedBy:req.user.email,companyId:b.companyId,folderId:b.folderId||undefined,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,sourceBankIsDrivePath:b.bankDrivePath===true,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
+      const sourceBankNames=b.bankPdfPaths?require('../fibu/statements').paths(b.bankPdfPaths,b.bankPdfPath):undefined;if(sourceBankNames&&(b.bankDrivePath!==true||sourceBankNames[0]!==b.bankPdfPath||sourceBankNames.length>(c.bankAccounts?.length||1)))fail('Erster Kontoauszug stimmt nicht überein.',400);
+      const job=store.enqueue(req.user.id,{sourceBankNames,requestedBy:req.user.email,companyId:b.companyId,folderId:b.folderId||undefined,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,sourceBankIsDrivePath:b.bankDrivePath===true,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
       if(b.folderId){const profile=store.folders(req.user.id,b.companyId).find(m=>m.id===b.folderId);if(profile?.completed)store.putFolder(req.user.id,b.companyId,b.folderId,{...profile,completed:false});}res.status(202).json(job);setImmediate(()=>cloud.run(job.id,job.owner,c));return;
     }
     if(config.mode==='remote') {
@@ -196,6 +200,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   router.get('/jobs/:id/files/:kind',async(req,res)=>{
     const job=jobFor(req),c=companyFor(config,req.user,job.companyId);
     let file=req.params.kind==='original'?job.bankPdfPath:req.params.kind==='marked'?job.markedPdfPath:req.params.kind==='report'?job.reportPath:job.documents.find(d=>d.id===req.params.kind)?.path;
+    const bankFile=req.params.kind.match(/^statement-([a-f0-9]{16})-(original|marked)$/);if(bankFile){const st=job.bankStatements?.find(s=>s.id===bankFile[1]);file=bankFile[2]==='original'?st?.bankPdfPath:st?.markedPdfPath;if(file&&bankFile[2]==='original'&&hash(await fs.readFile(await inside(c.root,file)))!==st.bankHash)fail('Original-Kontoauszug verändert.',409);}
     if(config.mode==='remote') {
       file=job.remoteFiles?.[req.params.kind];if(!file)fail('Datei noch nicht vom Windows-Dienst übertragen.',404);
       const safe=await inside(require('../fibu/runner-api').outputRoot(),file);
@@ -208,7 +213,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   });
   router.post('/microsoft/:companyId/connect',...write,async(req,res)=>{companyFor(config,req.user,req.params.companyId,{allowDisabled:true});res.json(await ms.begin(req.user.id,req.params.companyId));});
   router.post('/microsoft/:companyId/poll',...write,async(req,res)=>{companyFor(config,req.user,req.params.companyId,{allowDisabled:true});res.json(await ms.poll(req.user.id,req.params.companyId));});
-  router.post('/microsoft/:companyId/probe',...write,async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId,{allowDisabled:true});res.json(await ms.probe(req.user.id,req.params.companyId,c.mailbox||'epost@testconsulting.de'));});
+  router.post('/microsoft/:companyId/probe',...write,async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId,{allowDisabled:true});if(c.mailEnabled===false)fail('E-Mail-Prüfung ist für diese Firma deaktiviert.',409);res.json(await ms.probe(req.user.id,req.params.companyId,c.mailbox||'epost@testconsulting.de'));});
   router.post('/microsoft/:companyId/disconnect',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId,{allowDisabled:true});ms.disconnect(req.user.id,req.params.companyId);res.json({connected:false});});
   router.use((err,req,res,next)=>{if(res.headersSent)return next(err);res.status(err.status||422).json({error:err.status?err.message:'Dateizugriff oder Verarbeitung fehlgeschlagen. Konfiguration und Dateiberechtigungen prüfen.'});});
   router.runnerRouter=require('../fibu/runner-api').runnerApi({store,config,ms,db});

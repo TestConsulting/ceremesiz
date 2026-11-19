@@ -23,8 +23,10 @@ function cloudWorker({store,worker,ms}){
    const bankFolder=path.posix.dirname(bankPath)==='.'?'':path.posix.dirname(bankPath);
    const bankEntries=bankFolder===job.sourceMonthPath?entries:await ms.driveList(owner,job.companyId,bankFolder);
    const bank=bankEntries.find(d=>d.file&&d.name===path.posix.basename(bankPath));if(!bank)fail('Bank-PDF fehlt im gewählten OneDrive-Ordner.');
+   const bankPaths=job.sourceBankNames||[bankPath],bankNames=new Set(bankPaths.map(p=>path.posix.basename(p)));const statementByPath=new Map();
+   if(job.sourceBankNames?.length){job.bankStatements=bankPaths.map(sourcePath=>({id:hash(sourcePath).slice(0,16),sourcePath}));for(const st of job.bankStatements)statementByPath.set(st.sourcePath,st);}
    const markedBankPrefix=path.parse(bank.name).name+'_Astra';
-   const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&!d.name.toLowerCase().startsWith(markedBankPrefix.toLowerCase())&&!/ASTRA_Pruefbericht/i.test(d.name);
+   const supported=d=>d.file&&/\.(pdf|png|jpe?g)$/i.test(d.name)&&![...bankNames].some(n=>d.name.toLowerCase().startsWith(path.parse(n).name.toLowerCase()+'_astra'))&&!/ASTRA_Pruefbericht/i.test(d.name);
    const snapshots=[];let total=0,downloaded=0,downloadTotal=entries.filter(d=>supported(d)&&d.name!==bank.name).length+1;
    async function copy(entry,relative,destination){
     await require('./pause').checkpoint(job,store);
@@ -33,10 +35,11 @@ function cloudWorker({store,worker,ms}){
     advance(job,store,'download',downloaded++,downloadTotal);
     const sourcePath=(relative?relative+'/':'')+entry.name;
     let {bytes,source}=await ms.driveDownload(owner,job.companyId,sourcePath);
-    if(entry===bank&&ms.bankSource)bytes=await ms.bankSource(job,sourcePath,bytes,source,store);
+    if(ms.bankSource){const st=statementByPath.get(sourcePath);if(st){const part={...job,bankSource:null};bytes=await ms.bankSource(part,sourcePath,bytes,source,require('./statements').proxyStore(job,st,store));st.bankSource=part.bankSource;}else if(entry===bank)bytes=await ms.bankSource(job,sourcePath,bytes,source,store);}
     const saved=await writeVerified(destination,entry.name,bytes);snapshots.push({...source,path:sourcePath,hash:hash(bytes),localPath:saved});return saved;
    }
-   job.monthFolderPath=folder;job.bankPdfPath=await copy(bank,bankFolder,folder);
+   job.monthFolderPath=folder;
+   if(job.bankStatements?.length){const originals=path.join(folder,'_banks');await fs.mkdir(originals,{recursive:true,mode:0o700});for(const st of job.bankStatements){cleanPath(st.sourcePath);const parent=path.posix.dirname(st.sourcePath)==='.'?'':path.posix.dirname(st.sourcePath),items=parent===job.sourceMonthPath?entries:await ms.driveList(owner,job.companyId,parent),entry=items.find(e=>e.file&&e.name===path.posix.basename(st.sourcePath));if(!entry)fail('Ein ausgewählter Kontoauszug fehlt.');const target=path.join(originals,st.id);await fs.mkdir(target,{recursive:true,mode:0o700});st.bankPdfPath=await copy(entry,parent,target);st.bankHash=hash(await fs.readFile(st.bankPdfPath));}await require('./statements').merge(job,folder);}else job.bankPdfPath=await copy(bank,bankFolder,folder);
    const checked=await worker.validate(local,job);job.bankHash=checked.bankHash;job.transactions=checked.transactions;job.controls=checked.controls||null;job.progress='OneDrive-Bankkonto und Auszugszeitraum geprüft.';store.save(job);
    async function copyReceipt(entry,relative,destination){try{await copy(entry,relative,destination);}catch(e){if(store.get(owner,id)?.cancelRequested)throw e;job.issues.push('OneDrive-Beleg '+entry.name+': '+(e.status?e.message:'Datei nicht lesbar. Manuell prüfen.'));}}
    const plan=[];let foldersRead=0;job.searchScope={lookbackMonths:1,driveRoot:c.cloud.rootPath,folders:[]};
@@ -48,7 +51,7 @@ function cloudWorker({store,worker,ms}){
      if(entry.folder&&entry.name.toLowerCase()==='nicht zugewiesene belege')continue;
      if(entry.folder&&depth>=8)fail('Belegsuche auf acht Ordnerebenen begrenzt. Suche eingrenzen.');
      if(entry.folder&&depth<8&&!/^_(?:ASTRA_Originale|Vorversionen)|^Backup/i.test(entry.name)){cleanPath(entry.name);await collect((relative?relative+'/':'')+entry.name,destination,null,depth+1);}
-     else if(supported(entry)&&entry.name!==bank.name&&!/^(?:Sparkasse_\d{2}[._]|GK_|Pruefprotokoll)/i.test(entry.name)){plan.push({entry,relative,destination});if(plan.length>500)fail('Mehr als 500 Belege. Suche eingrenzen.');}
+     else if(supported(entry)&&!bankNames.has(entry.name)&&!/^(?:Sparkasse_\d{2}[._]|GK_|Pruefprotokoll)/i.test(entry.name)){plan.push({entry,relative,destination});if(plan.length>500)fail('Mehr als 500 Belege. Suche eingrenzen.');}
     }
    }
    await collect(job.sourceMonthPath,folder,entries);

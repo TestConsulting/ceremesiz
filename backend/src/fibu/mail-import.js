@@ -1,6 +1,7 @@
 const fs=require('node:fs/promises'),path=require('node:path');
 const {inside,hash,writeVerified}=require('./core'),{advance}=require('./progress');
 async function importMail({job,c,collection,ms,store,event,checkpoint}){
+ if(c.mailEnabled===false){job.mailDocumentPaths=[];job.mailSummary=null;job.searchScope={...job.searchScope,mailDisabled:true};event(job,'E-Mail-Prüfung für diese Firma deaktiviert; ausschließlich OneDrive.');return;}
  job.mailDocumentPaths=[];job.mailSummary={messages:0,processed:0,stored:0,reused:0,marked:0,failed:0};
  if(!ms.connected(job.owner,job.companyId)){job.issues.push('E-Post nicht verbunden; keine E-Mail-Ablage.');return;}
  const mailbox=c.mailbox||'epost@testconsulting.de';job.searchScope={...job.searchScope,mailbox,mailFolder:'Posteingang',mailStatus:'reading',historicalReferences:[]};const messages=await ms.list(job.owner,job.companyId,mailbox);job.searchScope.mailStatus='searched';

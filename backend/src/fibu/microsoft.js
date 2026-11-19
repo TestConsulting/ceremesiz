@@ -8,11 +8,12 @@ const fetchJson=async(url,options={})=>{
 };
 function microsoft(config,{vault=null,resolveOwner=o=>o}={}) {
   const sessions=new Map(),refreshing=new Map();
-  const session=(o,c)=>{o=resolveOwner(o,c);const k=key(o,c);if(!sessions.has(k)){const saved=vault?.get(o,c);if(saved)sessions.set(k,saved);}return sessions.get(k);};
-  const save=(o,c,s)=>{o=resolveOwner(o,c);sessions.set(key(o,c),s);if(s.access_token)vault?.put(o,c,s);};
+  const connection=c=>config.companies?.[c]?.microsoftConnectionCompany||c;
+  const session=(o,c)=>{c=connection(c);o=resolveOwner(o,c);const k=key(o,c);if(!sessions.has(k)){const saved=vault?.get(o,c);if(saved)sessions.set(k,saved);}return sessions.get(k);};
+  const save=(o,c,s)=>{c=connection(c);o=resolveOwner(o,c);sessions.set(key(o,c),s);if(s.access_token)vault?.put(o,c,s);};
   const m=config.microsoft;
   const authority=m && /^[a-z0-9.-]+$/i.test(m.tenantId) && /^[a-z0-9-]+$/i.test(m.clientId) ? `https://login.microsoftonline.com/${m.tenantId}/oauth2/v2.0` : null;
-  const key=(owner,company)=>`${resolveOwner(owner,company)}:${company}`;
+  const key=(owner,company)=>`${resolveOwner(owner,connection(company))}:${connection(company)}`;
   const form=(body)=>({method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body)});
   async function token(owner,company) {
     const s=session(owner,company);
@@ -38,7 +39,7 @@ function microsoft(config,{vault=null,resolveOwner=o=>o}={}) {
     publishUnassigned:(job,c)=>require('./unassigned').publishReview(job,c,require('./onedrive').oneDrive({graph,config}),canWrite),
     configured:!!authority,
     connected:(o,c)=>!!session(o,c)?.access_token,
-    disconnect:(o,c)=>{o=resolveOwner(o,c);sessions.delete(key(o,c));vault?.delete(o,c);},
+    disconnect:(o,c)=>{c=connection(c);o=resolveOwner(o,c);sessions.delete(key(o,c));vault?.delete(o,c);},
     driveList:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).list(o,c,p),
     driveFolder:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).folder(o,c,p),
     driveDownload:(o,c,p)=>require('./onedrive').oneDrive({graph,config}).download(o,c,p),

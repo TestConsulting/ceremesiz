@@ -13,6 +13,7 @@ function engine({store,config,ms}) {
     return value;
   }
   async function validate(c,body) {
+    if(body.bankStatements?.length)return require('./statements').validate(c,body);
     const month=monthFromFolder(body.monthFolderPath);
     if(body.month&&body.month!==month) fail('Monat stimmt nicht mit dem Ordner überein.',400);
     const folder=await inside(c.root,body.monthFolderPath,'directory');
@@ -46,7 +47,7 @@ function engine({store,config,ms}) {
     const reopened=await pdf.extract(output),original=await pdf.extract(bytes);
     if(reopened.pages.length!==original.pages.length||reopened.text!==original.text)fail('PDF-Prüfung: Text oder Seitenzahl verändert.');
     job.markedPdfPath=await writeVerified(folder,astraName(path.basename(bank)),output);
-    await checkpoint(job);if(job.execution==='server'&&ms.publishBank){try{await ms.publishBank(job,c,store);}catch(e){job.issues.push('OneDrive-PDF konnte nicht aktualisiert werden: '+(e.status?e.message:'Verbindung prüfen.'));}}
+    await checkpoint(job);if(job.execution==='server'&&ms.publishBank){try{if(job.bankStatements?.length)await require('./statements').publish(job,c,ms,store);else await ms.publishBank(job,c,store);}catch(e){job.issues.push('OneDrive-PDF konnte nicht aktualisiert werden: '+(e.status?e.message:'Verbindung prüfen.'));}}
     await checkpoint(job);try{await exportUnassigned(job,c);}catch{job.issues.push('Ordner für nicht zugewiesene Belege konnte nicht vollständig erstellt werden. Originaldateien bleiben erhalten.');}
     job.lastSuccessfulCheck=new Date().toISOString();
     job.state=job.issues.length?'partial':job.transactions.some(t=>['missing','manual'].includes(t.status))?'waiting_for_user':'completed';
@@ -90,7 +91,7 @@ function engine({store,config,ms}) {
           await checkpoint(job);
           if(!entry.isFile()||! /\.(pdf|jpe?g|png)$/i.test(entry.name)||/ASTRA_Pruefbericht/i.test(entry.name)||entry.name.startsWith(path.parse(job.bankPdfPath).name+'_Astra'))continue;
           const file=await inside(c.root,path.join(folder,entry.name));
-          if(file===job.bankPdfPath)continue;
+          if(file===await inside(c.root,job.bankPdfPath)||(job.bankStatements||[]).some(s=>entry.name===path.basename(s.bankPdfPath)||entry.name.startsWith(path.parse(s.bankPdfPath).name+'_Astra')))continue;
           try {
             let d=await document(file,c,{source:mail||folder===collection?'collection':'month'});
             const provenance=store.imports(owner,job.companyId).find(i=>i.hash===d.hash);if(provenance)d.portalImport=provenance;

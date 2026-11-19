@@ -1,3 +1,9 @@
+## Gemeinsame Freigabe AC Immo + Jobübersicht
+
+Die AC-Immo-Erweiterung ist mit der Jobsteuerung auf der Monatsübersicht zusammengeführt. Die Aktivierung erfolgt nach Veröffentlichung unter Einstellungen → FiBu über einen privaten JSON-Import mit ausdrücklicher Freigabe. Der Server übernimmt nur die bestätigte AC-Immo-Wurzel, drei geprüfte Konten und die bestehende Microsoft-Verbindung von TestConsulting; E-Mail bleibt gesperrt. Die serverseitigen Verzeichnisse werden abgeleitet, nicht aus der Datei übernommen. Kontodaten verbleiben in der privaten Datenbank und außerhalb des Git-Repositorys. Anmeldung, CSRF und Same-Origin-Prüfung schützen den Import; erneute Aktivierung überschreibt keine vorhandene Einrichtung. SQLite speichert die Firmenkonfiguration über Jenkins-Neuveröffentlichungen hinweg.
+
+Zusammengeführte Regression: 79 Tests, davon 78 erfolgreich und ein umgebungsbedingt übersprungener Symlink-Test. Browsersteuerung beim Releaseversuch weiterhin nicht erreichbar, deshalb Veröffentlichung nicht als abgeschlossen bestätigt.
+
 ## Jobsteuerung auf der Monatsübersicht
 
 Pausieren/Fortsetzen steht direkt am Fortschritt jedes aktiven bzw. unterbrochenen FiBu-Eintrags. Der zusätzliche Button „Jobdetails öffnen →“ führt ausdrücklich zu Umsätzen und Ergebnissen. Nach dem Start bleibt die Übersicht geöffnet. Die Detailansicht hat keine Pausensteuerung; der Zurück-Button verweist auf „FiBu-Monate / Jobsteuerung“. Lokal geprüft, weiterhin nicht veröffentlicht.
@@ -7,6 +13,11 @@ Pausieren/Fortsetzen steht direkt am Fortschritt jedes aktiven bzw. unterbrochen
 Der DOM-Abgleich erhält Elemente über IDs, Eintrags-/Buchungs-IDs und den PDF-Frame. Der Ergebnisrahmen leert die separat aktualisierte Buchungsliste nicht mehr bei jedem Poll. Neue Ergebnisabsätze können vor der Vorschau erscheinen, ohne den Frame zu ersetzen. Die Jobsteuerung steht oben in der Detailansicht und direkt am Fortschritt in der Übersicht. Unterbrochene Serverläufe unter 100 Prozent können über denselben Job erneut geprüft werden; bestehende verifizierte Ablagen werden wiederverwendet. Vollständig beendete, abgebrochene, abgeschlossene oder durch einen anderen aktiven Job blockierte Läufe werden nicht fortgesetzt.
 
 FiBu-Assets tragen eine gemeinsame Version. Nach einem späteren Serverwechsel weist die API auf eine neue Frontend-Version hin; das Laden bleibt eine bewusste Benutzeraktion und startet/stoppt keinen Job. Übersicht aktualisiert sich auch im Leerlauf, temporäre Pollingfehler werden erneut versucht. Ein vollständiger lokaler Browserlauf prüfte Pause/Fortsetzen bei fortlaufender E-Mail-Verarbeitung mit synthetischen Daten, ohne entfernte PDF-Frames oder Styles. Produktion wurde dabei nur lesend geprüft; kein Deployment.
+## AC Immo: mehrere Kontoauszüge pro Monat (lokal vorbereitet, nicht deployed)
+
+Ein Monatsprofil kann mehrere bankPdfPaths speichern; sourceBankNames hält die verifizierte Jobauswahl. Jeder Originalauszug wird anhand seiner eigenen Kopf-IBAN, Kontoinhaber und Zeitraum gegen bankAccounts geprüft. Doppelte Firmenkonten im selben Monat sind gesperrt. Sparkasse verwendet Anzahl-/Saldenkontrolle; Raiffeisen-Druckansichten erhalten eine eigene Saldenabstimmung. Die interne Gesamt-PDF dient der gemeinsamen Prüfung, mit Konto-ID/Label und versetzten Seitenkoordinaten pro Umsatz. Einzel-PDFs werden vor der jeweiligen OneDrive-Aktualisierung auf unveränderten Text und Seitenzahl geprüft. Alle ausgewählten Bankdateien bleiben von Belegimport und Nicht-zugewiesen-Ablage ausgeschlossen.
+
+mailEnabled:false sperrt den Mailimport sowie die Postfachprobe; AC Immo verwendet zunächst ausschließlich OneDrive. microsoftConnectionCompany:tc verwendet die vorhandene Microsoft-Sitzung, während Graph-Dateipfade weiterhin gegen die eigene AC-Immo-Wurzel geprüft werden. Die private Firmenkonfiguration mit den drei geprüften Konten liegt außerhalb des Repositorys. Aktivierung und Deployment sind ausdrücklich noch nicht erfolgt.
 
 ## Stabile Anzeige, Pause und Regelübersicht
 

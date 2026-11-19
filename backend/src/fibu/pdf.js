@@ -26,6 +26,7 @@ async function extract(bytes) {
 }
 const money = s => Number(s.replace(/\./g, '').replace(',', '.').replace(/\s/g, ''));
 function transactions(extracted, month, digest) {
+  const rb=require('./raiffeisen').raiffeisen(extracted,month,digest);if(rb)return rb;
   const sparkasse=require('./sparkasse').sparkasse(extracted,month,digest);if(sparkasse)return sparkasse;
   const result = [], issues = [];
   for (const p of extracted.pages) for (const line of p.lines) {
@@ -48,7 +49,7 @@ function verifyStatement(extracted, config, month) {
   if (!norm(extracted.text).includes(norm(config.accountHolder)) || !extracted.text.replace(/\s/g,'').toUpperCase().includes(config.iban.replace(/\s/g,'').toUpperCase())) fail('Kontoinhaber oder IBAN stimmen nicht mit der verifizierten Firmenkonfiguration überein.');
   const [year, mon] = month.split('-');
   // Explicit statement period required, not just transaction or filename dates.
-  const period = extracted.text.match(/(?:Auszugszeitraum|Zeitraum)\s*:?\s*(\d{2})\.(\d{2})\.(\d{4})\s*(?:bis|-)\s*(\d{2})\.(\d{2})\.(\d{4})/i);
+  const period = extracted.text.match(/(?:Auszugszeitraum|Zeitraum|Filterparameter)\s*:?\s*(\d{2})\.(\d{2})\.(\d{4})\s*(?:bis|-)\s*(\d{2})\.(\d{2})\.(\d{4})/i);
   if (!period || period[2] !== mon || period[3] !== year || period[5] !== mon || period[6] !== year) fail('Auszugszeitraum nicht eindeutig verifiziert. Banklayout manuell klären.');
 }
 function receiptMetadata(extracted, config) {
