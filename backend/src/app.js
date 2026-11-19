@@ -21,6 +21,7 @@ const inlineJson = obj => JSON.stringify(obj)
   .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
 function createApp(options = {}) {
+  const fibuUiVersion=require('./fibu/ui-version')();
   const isProd = process.env.NODE_ENV === 'production';
   let secret = options.sessionSecret || process.env.SESSION_SECRET;
   if (!secret) {
@@ -75,8 +76,8 @@ function createApp(options = {}) {
   let internCache = null;
   const internHtml = () => (isProd && internCache) || (internCache = fs.readFileSync(internFile, 'utf8'));
   app.get(['/intern', '/intern/'], requireAuthPage, (req, res) => {
-    const boot = { user: publicUser(req.user), csrfToken: req.session.csrfToken, sidebarSettings: getSettings() };
-    const html = internHtml().replace('<!--__BOOT__-->', `<script>window.__BOOT__=${inlineJson(boot)}</script>`);
+    const boot = { user: publicUser(req.user), csrfToken: req.session.csrfToken, sidebarSettings: getSettings(),fibuUiVersion };
+    const html = internHtml().replaceAll('__FIBU_UI_VERSION__',fibuUiVersion).replace('<!--__BOOT__-->', `<script>window.__BOOT__=${inlineJson(boot)}</script>`);
     res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
     res.type('html').send(html);
   });

@@ -9,6 +9,7 @@ const {engine}=require('../fibu/engine');
 const {microsoft}=require('../fibu/microsoft');
 const {inside,monthFromFolder,hash,fail,classify,writeVerified}=require('../fibu/core');
 module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
+  const uiVersion=require('../fibu/ui-version')();
   const router=express.Router(),store=require('../fibu/shared-store').sharedStore(db,createStore(db));
   const rules=require('../fibu/rules').ruleStore(db);
   const companyFor=(config,user,id,options)=>rules.effective(id,baseCompanyFor(config,user,id,options));
@@ -16,7 +17,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   const directMs=ms;ms=new Proxy(directMs,{get(target,key){const value=target[key];if(typeof value!=='function')return value;return (...args)=>{if(typeof args[0]==='number'&&typeof args[1]==='string')args[0]=store.primaryOwner(args[0],args[1]);return value.apply(target,args);};}});
   const worker=engine({store,config,ms}),cloud=require('../fibu/cloud').cloudWorker({store,worker,ms});
   store.recover();
-  router.use(requireAuthApi,(req,res,next)=>{res.set('Cache-Control','no-store');next();});
+  router.use(requireAuthApi,(req,res,next)=>{res.set({'Cache-Control':'no-store','X-FiBu-UI-Version':uiVersion});next();});
   const write=[requireSameOriginJson(allowedOrigins),requireCsrf];
   router.get('/onedrive/:companyId',async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);if(config.mode!=='cloud')fail('Direkter OneDrive-Zugriff nicht aktiviert.',409);const relative=req.query.path??c.cloud.monthBasePath??'';require('../fibu/onedrive').cleanPath(relative,{empty:true});res.json({path:relative,entries:await ms.driveList(req.user.id,req.params.companyId,relative),...(ms.driveFolder?await ms.driveFolder(req.user.id,req.params.companyId,relative):{})});});
   router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
@@ -144,9 +145,15 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     res.json(store.control(job,true));
   });
   router.post('/jobs/:id/resume',...write,(req,res)=>{
-    const job=jobFor(req),c=companyFor(config,req.user,job.companyId);if(config.mode!=='cloud'||!['queued','running'].includes(job.state)||!job.pauseRequested||job.cancelRequested)fail('Dieser Lauf ist nicht pausiert.',409);
-    const saved=store.control(job,false);res.json(saved);
-    if(!cloud.running.has(job.id)&&!worker.running.has(job.id)){saved.documents=[];saved.mailDocumentPaths=[];saved.events.push({at:new Date().toISOString(),message:'Fortsetzen nach Dienstneustart: Quellen werden erneut geprüft; verifizierte Ablagen werden wiederverwendet.'});store.save(saved);setImmediate(()=>cloud.run(job.id,job.owner,c));}
+    const job=jobFor(req),c=companyFor(config,req.user,job.companyId),interrupted=job.execution==='server'&&['partial','failed','waiting_for_user'].includes(job.state)&&job.workProgress?.percent<100;
+    const paused=['queued','running'].includes(job.state)&&job.pauseRequested;
+    if(config.mode!=='cloud'||(!paused&&!interrupted)||job.cancelRequested)fail('Dieser Lauf kann nicht fortgesetzt werden.',409);
+    if(store.isClosed(job.companyId,job.month,job.folderId))fail('Monat zuerst wieder öffnen.',409);
+    if(interrupted&&(store.hasActive(job.companyId,job.month)||cloud.running.has(job.id)||worker.running.has(job.id)))fail('Für diesen Monat läuft bereits eine Prüfung.',409);
+    const saved=store.control(job,false);
+    if(interrupted){saved.pausedMs=(saved.pausedMs||0)+Math.max(0,Date.now()-Date.parse(saved.updated));saved.runFinishedAt=null;saved.state='queued';store.save(saved,'queued');}
+    if(!cloud.running.has(job.id)&&!worker.running.has(job.id)){saved.documents=[];saved.mailDocumentPaths=[];saved.events.push({at:new Date().toISOString(),message:'Fortsetzen nach Unterbrechung: Quellen werden erneut geprüft; verifizierte Ablagen werden wiederverwendet.'});store.save(saved);setImmediate(()=>cloud.run(job.id,job.owner,c));}
+    res.status(202).json(store.get(job.owner,job.id));
   });
   router.post('/jobs/:id/cancel',...write,(req,res)=>{
     const job=jobFor(req);if(['queued','running'].includes(job.state)){job.cancelRequested=true;store.save(job);}res.json(job);

@@ -1,14 +1,24 @@
 /* Keep existing DOM nodes during polling: styles, focus and native progress stay mounted. */
 function fibuPatchDom(target,html){
  const template=document.createElement('template');template.innerHTML=html;
+ const key=n=>n.nodeType===1?(n.id?'id:'+n.id:n.getAttribute('data-entry-id')?'entry:'+n.getAttribute('data-entry-id'):n.getAttribute('data-id')?'row:'+n.getAttribute('data-id'):n.tagName==='IFRAME'?'frame:'+n.getAttribute('title'):n.classList.contains('fibu-review')?'review':null):null;
  function patch(old,next){
   if(old.isEqualNode(next))return;
   if(old.nodeType!==next.nodeType||old.nodeName!==next.nodeName){old.replaceWith(next.cloneNode(true));return;}
   if(old.nodeType!==1){old.nodeValue=next.nodeValue;return;}
   for(const a of [...old.attributes])if(!(old.nodeName==='DETAILS'&&a.name==='open')&&!next.hasAttribute(a.name))old.removeAttribute(a.name);
   for(const a of [...next.attributes])if(!(old.nodeName==='DETAILS'&&a.name==='open')&&old.getAttribute(a.name)!==a.value)old.setAttribute(a.name,a.value);
-  const wanted=[...next.childNodes];for(let i=0;i<wanted.length;i++){if(!old.childNodes[i])old.append(wanted[i].cloneNode(true));else patch(old.childNodes[i],wanted[i]);}
-  while(old.childNodes.length>wanted.length)old.lastChild.remove();
+  if(old!==target&&old.id==='fibuRows'&&!next.childNodes.length)return;
+  let cursor=old.firstChild;
+  for(const wanted of [...next.childNodes]){
+   const wantedKey=key(wanted);let current=cursor;
+   if(wantedKey&&key(current||{})!==wantedKey){current=[...old.childNodes].find(n=>key(n)===wantedKey)||null;}
+   else if(!wantedKey&&current&&key(current))current=null;
+   if(!current){old.insertBefore(wanted.cloneNode(true),cursor);continue;}
+   if(current!==cursor){while(cursor&&cursor!==current){const extra=cursor;cursor=cursor.nextSibling;extra.remove();}}
+   const following=current.nextSibling;patch(current,wanted);cursor=following;
+  }
+  while(cursor){const extra=cursor;cursor=cursor.nextSibling;extra.remove();}
  }
  const wrapper=target.cloneNode(false);wrapper.append(template.content);patch(target,wrapper);
 }
@@ -17,6 +27,7 @@ async function viewFibuHome(company){
   const generation=++fibuGeneration;clearTimeout(fibuTimer);
   let state,c,jobs=[],months=[],contextEntry=null,savedNotice='',removedEntries=[],lastRemoved=null,browsePath='',pickerMode='new',pickerMonth=null,selectedBank='',driveEntries=[],browseGeneration=0,pickerPeriod='',pickerLabel='',pickerNameEdited=false,draft=null;
   const alive=()=>generation===fibuGeneration&&curRoute==='fibu-'+company;
+  const retryRefresh=()=>refresh().catch(e=>{error(e);if(alive()){clearTimeout(fibuTimer);fibuTimer=setTimeout(retryRefresh,3000);}});
   const name=month=>month.slice(5)+'/'+month.slice(0,4);
   const entryName=m=>m.name||'FiBu '+name(m.month)+(m.label?' · '+m.label:'');
   const belongs=(j,m)=>{
@@ -32,7 +43,7 @@ async function viewFibuHome(company){
   function modal(content){const dialog=$('#fibuHomeModal');dialog.innerHTML=button('closeModal','×',false,'class="f-modal-close" aria-label="Dialog schließen"')+content+'<p id="fibuDialogError" class="f-error" role="alert"></p>';dialog.showModal();return dialog;}
   function render(){
     if(!alive())return;
-    if(!document.querySelector('link[data-fibu-style]')){const style=document.createElement('link');style.rel='stylesheet';style.href='/intern/fibu-cockpit.css';style.dataset.fibuStyle='';document.head.append(style);}
+    if(!document.querySelector('link[data-fibu-style]')){const style=document.createElement('link');style.rel='stylesheet';style.href='/intern/fibu-cockpit.css?v='+encodeURIComponent(BOOT.fibuUiVersion||'');style.dataset.fibuStyle='';document.head.append(style);}
     fibuPatchDom($('#main'),`<div class="fibu-cockpit"><div class="f-head"><div><div class="f-kicker">${esc(CO[company].n)} · Finanzbuchhaltung</div><h1>Finanzbuchhaltung</h1></div><span class="f-badge">${state.demo?'Beispielansicht':'Privater Bereich'}</span></div>
       ${state.demo?'<div class="f-notice"><p>Beispielansicht · Ausschließlich synthetische Testdaten. Zuordnungen hier dienen nur zum Ausprobieren.</p></div>':''}
       ${!c.enabled?'<div class="f-notice"><p>Für diese Firma ist noch keine FiBu-Verbindung eingerichtet.</p></div>':''}
@@ -42,16 +53,16 @@ async function viewFibuHome(company){
         const success=jobs.find(j=>belongs(j,m)&&j.lastSuccessfulCheck),active=['queued','running'].includes(j?.state);
         return `<article class="f-month${m.completed?' f-completed':''}" data-month="${m.month}" data-entry-id="${esc(m.id)}"><div>${button('open',esc(entryName(m)),false,'class="f-month-name"')} ${button('rename','✎',false,'aria-label="Name bearbeiten" title="Name bearbeiten"')} ${button('complete',m.completed?'Wieder öffnen':'Vollständig setzen',false,active?'disabled':'')} ${m.completed?'<span class="f-badge f-completed-badge">✓ Vollständig</span>':''} ${button('remove','Entfernen',false,'aria-label="Eintrag entfernen"')} ${state.demo?'<span class="f-badge">Beispiel</span>':''}<small>${esc(m.monthFolderPath)}</small></div><div><div class="f-count ${done?'done':''}">${tx.length?matched+'/'+tx.length+' zugeordnet'+(done?' ✓':''):'Noch nicht geprüft'}</div><small>Dokumente zuletzt geprüft: ${success?fibuTime(success.lastSuccessfulCheck):'Noch nicht geprüft'}</small><div class="f-bar ${done?'done':''}"><i style="width:${tx.length?matched/tx.length*100:0}%"></i></div></div>
           <div class="f-actions">${j?`<a class="f-link" href="/api/fibu/jobs/${j.id}/files/${j.markedPdfPath?'marked':'original'}" target="_blank" rel="noopener">▤ PDF</a>`:button('open','▤ PDF')}${button('folder','Ordner ↗')}${button('edit','FiBu-Pfad')}</div>
-          <div class="f-agent"><div class="f-source"><span>KONTOAUSZUG · QUELLE FÜR ASTRA</span><p>${esc(m.bankPdfPath||'Noch kein Kontoauszug hinterlegt')}</p>${j?fibuProgress(j):''}${j?`<small>${esc(fibuLabel(j.state))} · Letzter Versuch: ${fibuTime(j.created)}</small>`:''}</div><div class="f-agent-actions">${button('bank','Kontoauszug-Pfad')}<span class="f-connection ${c.connected?'ok':''}">● ${c.connected?'E-Post verbunden':'E-Post nicht verbunden'}</span>${active?button(j.pauseRequested?'resume':'pause',j.pauseRequested?'▶ Fortsetzen':'Ⅱ Pausieren'):''}${button('start',active?'◷ Prüfung läuft':'▶ Prüfung starten',true,active?'disabled':'')}</div></div></article>`;
+          <div class="f-agent"><div class="f-source"><span>KONTOAUSZUG · QUELLE FÜR ASTRA</span><p>${esc(m.bankPdfPath||'Noch kein Kontoauszug hinterlegt')}</p>${j?fibuProgress(j)+((active||fibuCanResume(j))?'<div class="f-job-controls">'+button(active&&!j.pauseRequested?'pause':'resume',active&&!j.pauseRequested?'Ⅱ Prüfung pausieren':'▶ Prüfung fortsetzen',false,'class="f-pause-button"')+(fibuCanResume(j)?'<small>Unterbrochener Lauf · Quellen werden beim Fortsetzen erneut geprüft.</small>':'')+'</div>':''):''}${j?`<small>${esc(fibuLabel(j.state))} · Letzter Versuch: ${fibuTime(j.created)}</small>`:''}</div><div class="f-agent-actions">${button('bank','Kontoauszug-Pfad')}<span class="f-connection ${c.connected?'ok':''}">● ${c.connected?'E-Post verbunden':'E-Post nicht verbunden'}</span>${button('start',active?'◷ Prüfung läuft':'▶ Prüfung starten',true,active?'disabled':'')}</div></div></article>`;
       }).join('')||'<div class="f-empty">Noch kein FiBu-Monat angelegt. Hinterlege zuerst den Monatsordner und die konkrete Bank-PDF.</div>'}</div>
       <p class="f-hint">FiBu-Pfad = Belegordner · Kontoauszug-Pfad = konkrete Bank-PDF · ▶ = ausdrücklicher Startauftrag für Astra.</p><p class="f-hint">Änderungen an Monaten und Zuordnungen werden privat gespeichert. Ein beendeter Prüflauf ist noch kein Monatsabschluss.</p><dialog id="fibuHomeModal"></dialog></div>`);
     $('#main .fibu-cockpit').onclick=click;
   }
   async function refresh(){
-    if(document.getElementById('fibuHomeModal')?.open){clearTimeout(fibuTimer);fibuTimer=setTimeout(()=>refresh().catch(error),1500);return;}
-    const [j,m]=await Promise.all([fibuApi('/jobs?companyId='+company),fibuApi('/months?companyId='+company)]);if(!alive())return;if(document.getElementById('fibuHomeModal')?.open){clearTimeout(fibuTimer);fibuTimer=setTimeout(()=>refresh().catch(error),1500);return;}jobs=j.jobs;removedEntries=m.removed||[];const hidden=new Set(removedEntries.map(m=>m.id));
+    if(document.getElementById('fibuHomeModal')?.open){clearTimeout(fibuTimer);fibuTimer=setTimeout(retryRefresh,1500);return;}
+    const [j,m]=await Promise.all([fibuApi('/jobs?companyId='+company),fibuApi('/months?companyId='+company)]);if(!alive())return;if(document.getElementById('fibuHomeModal')?.open){clearTimeout(fibuTimer);fibuTimer=setTimeout(retryRefresh,1500);return;}jobs=j.jobs;removedEntries=m.removed||[];const hidden=new Set(removedEntries.map(m=>m.id));
     const map=new Map(m.months.map(m=>[m.id,m]));for(const j of jobs)if(!hidden.has(j.folderId||j.month)&&!map.has(j.folderId||j.month))map.set(j.folderId||j.month,{id:j.folderId||j.month,companyId:company,month:j.month,monthFolderPath:j.sourceMonthPath||j.monthFolderPath,bankPdfPath:j.sourceBankName||j.bankPdfPath,bankDrivePath:j.sourceBankIsDrivePath===true,folderUrl:''});
-    months=[...map.values()].sort((a,b)=>b.month.localeCompare(a.month)||(b.createdAt||'').localeCompare(a.createdAt||''));render();clearTimeout(fibuTimer);if(jobs.some(j=>['queued','running'].includes(j.state)))fibuTimer=setTimeout(()=>refresh().catch(error),1500);
+    months=[...map.values()].sort((a,b)=>b.month.localeCompare(a.month)||(b.createdAt||'').localeCompare(a.createdAt||''));render();clearTimeout(fibuTimer);fibuTimer=setTimeout(retryRefresh,jobs.some(j=>['queued','running'].includes(j.state))?1500:5000);
   }
   function edit(m){
     if(state.mode==='cloud'){if(!m){draft={folder:'',bank:'',month:'',name:'',nameEdited:false};showDraft();}else openPicker('folder',m);return;}

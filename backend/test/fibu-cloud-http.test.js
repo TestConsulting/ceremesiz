@@ -24,7 +24,7 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  assert.equal((await fetch(base+'/api/fibu/jobs/'+job.id+'/pause',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'})).status,403);
  assert.equal((await api('/jobs/'+job.id+'/pause',{})).status,200);downloadRelease();
  for(let i=0;i<100;i++){result=await(await api('/jobs/'+job.id)).json();if(result.paused)break;await new Promise(r=>setTimeout(r,20));}
- assert.equal(result.paused,true);const pausedDownloads=downloads;await new Promise(r=>setTimeout(r,80));assert.equal(downloads,pausedDownloads);assert.equal((await api('/jobs/'+job.id+'/resume',{})).status,200);
+ assert.equal(result.paused,true);const pausedDownloads=downloads;await new Promise(r=>setTimeout(r,80));assert.equal(downloads,pausedDownloads);assert.equal((await api('/jobs/'+job.id+'/resume',{})).status,202);
 
  const until=Date.now()+15000;while(Date.now()<until){result=await(await api('/jobs/'+job.id)).json();if(!['queued','running'].includes(result.state))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(result.execution,'server');assert.equal(result.state,'completed');assert.equal(result.transactions[0].status,'matched');assert.ok(result.markedPdfPath);assert.equal(result.sourceMonthPath,'Belege/Oktober');
@@ -70,5 +70,13 @@ test('Cloud-HTTP: OneDrive-Auswahl, manueller Start, Serverergebnis und Original
  const busy=store.enqueue(profiledJob.owner,{companyId:'tc',month:'2026-10',folderId:first.id});assert.equal((await secondApi('/months/'+first.id+'/completion',{companyId:'tc',complete:true})).status,409);store.save(busy,'cancelled');
 
  assert.equal((await secondApi('/months/'+first.id+'/completion',{companyId:'tc',complete:true})).status,200);const secondStart=await secondApi('/jobs',{...params,folderId:first.id});assert.equal(secondStart.status,202);const secondJob=await secondStart.json();assert.equal(secondJob.owner,profiledJob.owner);assert.equal((await(await api('/months?companyId=tc')).json()).months.find(m=>m.id===first.id).completed,false);let secondResult;for(let i=0;i<100;i++){secondResult=await(await api('/jobs/'+secondJob.id)).json();if(!['queued','running'].includes(secondResult.state))break;await new Promise(r=>setTimeout(r,100));}assert.equal(secondResult.state,'completed');
+
+ const interrupted={...secondResult,id:require('node:crypto').randomUUID(),state:'partial',pauseRequested:false,documents:[],workProgress:{...secondResult.workProgress,percent:75},progress:'Dienst wurde unterbrochen',created:new Date().toISOString()};store.adopt(interrupted);
+ assert.equal((await api('/jobs/'+secondResult.id+'/resume',{})).status,409);
+ const other=store.enqueue(interrupted.owner,{companyId:'tc',month:'2026-10',folderId:first.id});assert.equal((await api('/jobs/'+interrupted.id+'/resume',{})).status,409);store.save(other,'cancelled');
+ const continued=await api('/jobs/'+interrupted.id+'/resume',{});assert.equal(continued.status,202);assert.equal((await continued.json()).id,interrupted.id);let resumed;
+ for(let n=0;n<100;n++){resumed=await(await api('/jobs/'+interrupted.id)).json();if(!['queued','running'].includes(resumed.state))break;await new Promise(r=>setTimeout(r,50));}
+ assert.equal(resumed.state,'completed');assert.equal(resumed.transactions.length,1);assert.ok(resumed.events.some(e=>e.message.startsWith('Fortsetzen nach Unterbrechung')));
+ const page=await(await fetch(base+'/intern',{headers:{Cookie:cookie}})).text();assert.match(page,/fibu\.js\?v=[a-f0-9]{12}/);assert.ok(!page.includes('__FIBU_UI_VERSION__'));const header=(await api('/jobs?companyId=tc')).headers.get('X-FiBu-UI-Version');assert.match(header,/^[a-f0-9]{12}$/);
 
 });

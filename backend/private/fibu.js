@@ -3,11 +3,13 @@ let fibuTimer=null,fibuGeneration=0;
 function fibuVerificationUrl(value){const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||!['microsoft.com','www.microsoft.com','login.microsoft.com','login.microsoftonline.com'].includes(u.hostname))throw Error('Unerwartetes Microsoft-Anmeldeziel.');return u.href;}
 async function fibuApi(url,body) {
   const r=await fetch('/api/fibu'+url,{credentials:'same-origin',...(body!==undefined?{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':BOOT.csrfToken},body:JSON.stringify(body)}:{})});
+  const version=r.headers.get('X-FiBu-UI-Version');if(version&&BOOT.fibuUiVersion&&version!==BOOT.fibuUiVersion&&!document.getElementById('fibuUpdateNotice')){const notice=document.createElement('div');notice.id='fibuUpdateNotice';notice.setAttribute('role','status');notice.style.cssText='position:fixed;bottom:18px;right:18px;z-index:10000;max-width:450px;padding:18px;background:#fff8df;border:1px solid #d8bd67;border-radius:8px;box-shadow:0 4px 18px #0002';const text=document.createElement('p');text.textContent='Eine neue FiBu-Version ist verfügbar. Seite neu laden, um die aktuelle Jobsteuerung zu verwenden. Ein laufender Serverjob läuft dabei weiter.';const button=document.createElement('button');button.textContent='Aktuelle Version laden';button.onclick=()=>location.reload();notice.append(text,button);document.body.append(notice);}
   const result=await r.json();if(!r.ok)throw Error(result.error||'Anfrage fehlgeschlagen');return result;
 }
 function fibuTime(s){return s?new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',dateStyle:'medium',timeStyle:'short'}).format(new Date(s)):'–';}
 function fibuLabel(s){return ({queued:'Wartet auf Ausführung',running:'Prüfung läuft',waiting_for_user:'Prüfung benötigt Klärung',completed:'Prüfung beendet',partial:'Teilweise geprüft',failed:'Prüfung fehlgeschlagen',cancelled:'Abgebrochen',missing:'Beleg fehlt',manual:'Manuelle Zuordnung',matched:'Beleg zugeordnet',not_required:'Kein Beleg notwendig'})[s]||s;}
 function fibuMonth(s){return s.replace(/[\\/]+$/,'').match(/(?:^|[\\/])(20\d{2})[\\/](0[1-9]|1[0-2])$/)?.slice(1).join('-')||'Jahr/Monat noch nicht erkannt';}
+function fibuCanResume(job){return job?.execution==='server'&&!job.cancelRequested&&['partial','failed','waiting_for_user'].includes(job.state)&&job.workProgress?.percent<100;}
 function fibuProgress(job){
  const p=job?.workProgress;if(!p)return '';const active=['queued','running'].includes(job.state),percent=p.percent||0;
  const finished=!active&&percent===100&&['completed','partial','waiting_for_user'].includes(job.state);
@@ -42,6 +44,7 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     #fibuPlay{justify-self:start;width:auto;background:#00853f;color:white;border:0;padding:9px 15px;border-radius:6px;font:inherit;cursor:pointer}
     #fibuPlay:disabled{opacity:.5;cursor:wait}.fibu-status a{color:var(--c-tc,#00547f)}.fibu-row p{overflow-wrap:anywhere}
     .fibu-dialog{max-width:580px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:13px;padding:27px;margin:auto;color:var(--ink)}.fibu-dialog::backdrop{background:#1c302c66;backdrop-filter:blur(3px)}.fibu-dialog h2{font-size:21px;margin:0 0 10px}.fibu-dialog label{display:grid;gap:7px;margin:17px 0;font-size:12px}.fibu-dialog select,.fibu-dialog textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit}.fibu-dialog button{padding:9px 13px;border:1px solid var(--line);border-radius:6px;background:white;cursor:pointer}.fibu-dialog .primary{background:#00853f;color:white;border-color:#00853f}
+    .fibu-job-controls{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;background:white;border:1px solid #b8d9c4}.fibu-job-controls small{flex-basis:100%;color:#74828a}.fibu-job-controls .primary{background:#00853f;color:white}
     @media(max-width:1000px){.fibu-review{grid-template-columns:1fr}}
     </style><details class="panel"><summary style="padding:16px;cursor:pointer">Prüfauftrag, Pfade &amp; Verbindung</summary><div class="fibu-status" id="fibuConnection">Konfiguration wird geladen …</div>
     <form id="fibuStart" class="fibu-form"><label>Monatsordner (auf dem Ausführungsrechner)<input name="folder" required placeholder="…\\2026\\10"></label>
@@ -49,7 +52,7 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     <button class="btn" id="fibuPlay" disabled>▶ Astra FIBU starten</button></form></details><p id="fibuError" role="alert" class="fibu-error"></p>
     <section class="panel fibu-legend">Grün: konfigurierte Rechnungsgutschrift – kein Beleg notwendig, keine Belegübernahme. Gelb: Beleg erfolgreich abgelegt.
     Lila: betriebliche Vorgabe „Kein Beleg notwendig“. Ohne Farbe: offen. Ein beendeter Lauf schließt den Monat nicht automatisch ab.</section>
-    <section class="panel fibu-status"><label>Prüflauf <select id="fibuJobs"><option>Keine Läufe</option></select></label><div id="fibuStatus"></div></section><div id="fibuResult"></div><dialog id="fibuAssignDialog" class="fibu-dialog"></dialog>`;
+    <div id="fibuJobControls" class="panel fibu-job-controls" role="group" aria-label="Jobsteuerung"></div><section class="panel fibu-status"><label>Prüflauf <select id="fibuJobs"><option>Keine Läufe</option></select></label><div id="fibuStatus"></div></section><div id="fibuResult"></div><dialog id="fibuAssignDialog" class="fibu-dialog"></dialog>`;
   const error=e=>{if(generation===fibuGeneration)$('#fibuError').textContent=e.message;};
   $('#fibuBack').onclick=()=>viewFibuHome(company);
   const form=$('#fibuStart');form.folder.oninput=()=>$('#fibuMonth').textContent=fibuMonth(form.folder.value);
@@ -58,14 +61,15 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     current=job;form.folder.value=job.sourceMonthPath||job.monthFolderPath;form.bank.value=job.sourceBankName||job.bankPdfPath;$('#fibuMonth').textContent=job.month;
     const active=['queued','running'].includes(job.state),txs=job.transactions||[];
     $('#fibuPlay').disabled=active;
+    fibuPatchDom($('#fibuJobControls'),'<strong>'+esc(active?(job.pauseRequested?'Prüfung pausiert / Pause angefordert':'Prüfung läuft'):fibuCanResume(job)?'Prüfung unterbrochen':'Prüfung beendet')+'</strong>'+((active||fibuCanResume(job))?'<button id="fibuPause" class="btn primary">'+(active&&!job.pauseRequested?'Ⅱ Prüfung pausieren':'▶ Prüfung fortsetzen')+'</button>':'')+(active?'<button id="fibuCancel" class="btn">Lauf abbrechen</button>':'')+(fibuCanResume(job)?'<small>Beim Fortsetzen werden Quellen erneut geprüft; bereits gespeicherte Anhänge werden wiederverwendet.</small>':''));
     fibuPatchDom($('#fibuStatus'),`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p>${fibuProgress(job)}<p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
       <p>${txs.filter(t=>t.status==='matched').length} zugeordnet · ${txs.filter(t=>t.status==='missing').length} Beleg fehlt · ${txs.filter(t=>t.status==='manual').length} manuell · ${txs.filter(t=>t.status==='not_required').length} kein Beleg notwendig</p>
-      ${active?'<button id="fibuPause">'+(job.pauseRequested?'▶ Fortsetzen':'Ⅱ Pausieren')+'</button> <button id="fibuCancel">Lauf abbrechen</button>':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
+      ${active?'':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
       ${job.mailSummary?`<p class="fibu-status"><strong>E-Post:</strong> ${job.mailSummary.processed}/${job.mailSummary.messages} Nachrichten geprüft · ${job.mailSummary.marked} mit ASTRA/Erledigt markiert · ${job.mailSummary.failed} mit Ablage-/Verbindungsfehlern. Anhänge: ${job.mailSummary.stored} neu gespeichert, ${job.mailSummary.reused} wiederverwendet.</p>`:''}
       ${fibuSearchScope(job)}
       ${job.receiptPublication?`<p><strong>Belege im OneDrive-Zielordner:</strong> ${job.receiptPublication.files.length} verifiziert${job.receiptPublication.errors.length?' · '+job.receiptPublication.errors.length+' fehlgeschlagen':''}</p>`:''}
       ${job.issues?.length?`<ul>${job.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:''}`);
-    const pauseButton=$('#fibuPause');if(pauseButton)pauseButton.onclick=async()=>{pauseButton.disabled=true;try{draw(await fibuApi('/jobs/'+job.id+'/'+(job.pauseRequested?'resume':'pause'),{}));}catch(e){error(e);pauseButton.disabled=false;}};
+    const pauseButton=$('#fibuPause');if(pauseButton)pauseButton.onclick=async()=>{pauseButton.disabled=true;try{draw(await fibuApi('/jobs/'+job.id+'/'+(job.pauseRequested||fibuCanResume(job)?'resume':'pause'),{}));clearTimeout(fibuTimer);fibuTimer=setTimeout(poll,500);}catch(e){error(e);pauseButton.disabled=false;}};
     const base='/api/fibu/jobs/'+encodeURIComponent(job.id)+'/files/';
     fibuPatchDom($('#fibuResult'),`<section class="panel fibu-status"><a href="${base}original" target="_blank" rel="noopener">Originalbank öffnen</a>
       ${job.cloudPublished?.verified&&job.cloudPublished.webUrl?` · <a href="${esc(job.cloudPublished.webUrl)}" target="_blank" rel="noopener">Aktualisierte OneDrive-PDF ↗</a>`:''}
@@ -99,7 +103,7 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
   }
   async function poll(){
     if(generation!==fibuGeneration||curRoute!=='fibu-'+company||!current)return;
-    try{const j=await fibuApi('/jobs/'+current.id);if(generation!==fibuGeneration||curRoute!=='fibu-'+company)return;draw(j);if(['queued','running'].includes(j.state))fibuTimer=setTimeout(poll,1500);}catch(e){error(e);}
+    try{const j=await fibuApi('/jobs/'+current.id);if(generation!==fibuGeneration||curRoute!=='fibu-'+company)return;draw(j);if(['queued','running'].includes(j.state))fibuTimer=setTimeout(poll,1500);}catch(e){error(e);if(generation===fibuGeneration&&curRoute==='fibu-'+company)fibuTimer=setTimeout(poll,3000);}
   }
   async function load(){jobs=(await fibuApi('/jobs?companyId='+company)).jobs.filter(j=>(!selectedMonth||j.month===selectedMonth)&&(!selectedFolder||(j.folderId||j.month)===selectedFolder));$('#fibuJobs').innerHTML=jobs.map(j=>`<option value="${j.id}">${esc(j.month)} · ${fibuTime(j.created)} · ${esc(fibuLabel(j.state))}</option>`).join('')||'<option>Keine Läufe</option>';if(jobs[0]){draw(jobs[0]);if(['queued','running'].includes(jobs[0].state))fibuTimer=setTimeout(poll,1500);}}
   form.onsubmit=async e=>{e.preventDefault();$('#fibuError').textContent='';$('#fibuPlay').disabled=true;try{const j=await fibuApi('/jobs',{companyId:company,folderId:selectedFolder||current?.folderId,month:current?.month||selectedMonth,monthFolderPath:form.folder.value,bankPdfPath:form.bank.value,bankDrivePath:current?.sourceBankIsDrivePath===true&&form.bank.value===current.sourceBankName});await load();draw(j);fibuTimer=setTimeout(poll,1000);}catch(e){error(e);$('#fibuPlay').disabled=false;}};

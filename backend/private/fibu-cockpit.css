@@ -23,3 +23,5 @@
 .f-draft-source{padding:14px;margin-top:16px;border:1px solid #dce3de;border-radius:7px;font-size:13px}.f-draft-source p{margin:8px 0 12px;overflow-wrap:anywhere}
 
 .fibu-cockpit .f-month.f-completed{background:#ecf8ef;border-color:#91c8a2;border-top-color:#00853f}.fibu-cockpit .f-completed-badge{background:#d8efdf;color:#176635;margin-left:8px}
+
+.f-job-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0}.fibu-cockpit .f-pause-button{border:1px solid #00853f;color:#006b32;background:#edf8f0;font-size:13px;font-weight:600;padding:10px 14px}.f-job-controls small{flex-basis:100%;margin:0}
