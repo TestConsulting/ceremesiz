@@ -13,7 +13,7 @@ function configure(root,payload,{tcPilotMode}={}){
  if(config.mode==='cloud'){
   require('../src/fibu/onedrive').cleanPath(config.companies.tc.cloud?.rootPath);
   tokenKey=envText.match(/^FIBU_TOKEN_KEY=(.+)$/m)?.[1]?.trim();if(tokenKey&&Buffer.from(tokenKey,'base64').length!==32)throw Error('Vorhandener Token-Schlüssel ungültig.');
-  config.companies.tc.root='/app/backend/data/fibu-cloud/tc';
+  for(const [id,company] of Object.entries(config.companies)){if(!['tc','immo','holding'].includes(id))throw Error('Unbekannte Firma.');if(company.enabled&&(id==='tc'||company.pilotAccepted===true)){require('../src/fibu/onedrive').cleanPath(company.cloud?.rootPath);company.root='/app/backend/data/fibu-cloud/'+id;const folder=path.join(data,'fibu-cloud',id);fs.mkdirSync(folder,{recursive:true,mode:0o700});if(process.platform!=='win32'&&process.getuid?.()===0)fs.chownSync(folder,1000,1000);}}
   for(const folder of [path.join(data,'fibu-cloud'),path.join(data,'fibu-cloud','tc')]){fs.mkdirSync(folder,{recursive:true,mode:0o700});if(process.platform!=='win32'&&process.getuid?.()===0)fs.chownSync(folder,1000,1000);}
  }
  const stamp=new Date().toISOString().replace(/[:.]/g,'-');
