@@ -40,6 +40,7 @@ function engine({store,config,ms}) {
     const folder=await inside(c.root,job.monthFolderPath,'directory');
     const bank=await inside(folder,job.bankPdfPath),bytes=await fs.readFile(bank);
     if(hash(bytes)!==job.bankHash) fail('Originalbank wurde seit dem Start verändert. Neue Revision erforderlich.');
+    require('./rules').apply(job,c);
     await publishReceipts(job,c);
     const output=await pdf.annotate(bytes,job.transactions);
     const reopened=await pdf.extract(output),original=await pdf.extract(bytes);
@@ -61,9 +62,9 @@ function engine({store,config,ms}) {
     const failed=new Set((job.receiptPublication?.errors||[]).map(e=>e.hash));if(failed.size){job.issues.push('Zugeordnete Belege konnten nicht vollständig im OneDrive-Zielordner verifiziert werden. Betroffene Buchungen bleiben zur Klärung offen.');for(const t of job.transactions)if(t.status==='matched'&&(t.receipts||[]).some(r=>failed.has(r.hash))){t.status='manual';if(t.color==='yellow')t.color=null;t.reason='Beleg gefunden, aber Ablage im OneDrive-Zielordner nicht verifiziert.';}}
   }
   async function exportUnassigned(job,c){await require('./unassigned').createReview(job,c);if(job.execution==='server'&&ms.publishUnassigned)await ms.publishUnassigned(job,c);}
-  async function verifyDocument(job,d,body,c){
+  async function verifyDocument(job,d,body,c,actor=job.owner){
     const file=await inside(c.root,d.path);if(hash(await fs.readFile(file))!==d.hash)fail('Beleg wurde seit der Prüfung verändert.',409);
-    const review={...require('./review').validateReview(body,c),checkedBy:job.owner,documentHash:d.hash};
+    const review={...require('./review').validateReview(body,c),checkedBy:actor,documentHash:d.hash};
     store.putDocumentReview(job.owner,job.companyId,d.hash,review);
     Object.assign(d,require('./review').applyReview(d,review,c));
     job.events.push({at:review.checkedAt,message:'Beleg am Original bestätigt: '+d.name+' · '+review.reason,documentHash:d.hash});
@@ -104,14 +105,15 @@ function engine({store,config,ms}) {
         catch{job.issues.push('Früherer Beleg nicht mehr verifiziert: '+r.name);}
       }
       const matchDocuments=require('./core').canonicalDocuments(job.documents);
-      const crossGroups=require('./cross-check').qualifiedCrossChecks(job.transactions,matchDocuments,c);
-      const paymentGroups=require('./payment-evidence').qualifiedPayments(job.transactions,matchDocuments,c);
-      const candidates=new Map(job.transactions.map(t=>[t.id,match(t,matchDocuments)]));
-      const groups=allocations(job.transactions,matchDocuments);
+      const matchingTransactions=job.transactions.filter(t=>!classify(t,c).skipReceipt&&classify(t,c).color!=='purple');
+      const crossGroups=require('./cross-check').qualifiedCrossChecks(matchingTransactions,matchDocuments,c);
+      const paymentGroups=require('./payment-evidence').qualifiedPayments(matchingTransactions,matchDocuments,c);
+      const candidates=new Map(job.transactions.map(t=>[t.id,classify(t,c).skipReceipt||classify(t,c).color==='purple'?[]:match(t,matchDocuments)]));
+      const groups=allocations(job.transactions.filter(t=>!classify(t,c).skipReceipt&&classify(t,c).color!=='purple'),matchDocuments);
       let matched=0;for(const t of job.transactions) {
         advance(job,store,'match',matched++,job.transactions.length);
         checkpoint(job);Object.assign(t,classify(t,c));
-        if(t.color==='purple'){t.status='not_required';continue;}
+        if(t.color==='purple'||t.skipReceipt){t.status='not_required';t.receipts=[];t.reason=t.rule;continue;}
         const old=previous?.bankHash===job.bankHash&&previous.transactions?.find(x=>x.id===t.id);
         if(old?.manualDecision==='unmatched'){t.manualDecision='unmatched';t.status='manual';t.reason='Manuelle Aufhebung erhalten';continue;}
         let docs=candidates.get(t.id);

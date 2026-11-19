@@ -61,7 +61,7 @@ test('Portal ↔ Windows-Dienst: echte lokale HTTP-Kopplung, PDF und manuelle Au
  assert.equal((await api('/jobs/'+job.id+'/documents/'+result.documents[0].id+'/verify',{...review,companyName:'AC Immo Invest GmbH'})).status,400);
  assert.equal((await api('/jobs/'+job.id+'/documents/'+result.documents[0].id+'/verify',review)).status,202);
  result=await finished();assert.equal(result.documents[0].manualVerification.amount,136.45);assert.equal(result.documents[0].requiresReview,false);
- const other=await login('other@example.invalid');assert.equal((await api('/jobs/'+job.id,undefined,other.cookie)).status,404);assert.equal((await api('/jobs/'+job.id+'/files/marked',undefined,other.cookie)).status,404);
+ const other=await login('other@example.invalid');assert.equal((await api('/jobs/'+job.id,undefined,other.cookie)).status,200);assert.equal((await api('/jobs/'+job.id+'/files/marked',undefined,other.cookie)).status,200);
  const undo=await api('/jobs/'+job.id+'/assign',{transactionId:result.transactions[0].id,documentId:null,reason:'Synthetischer Test der Aufhebung'});assert.equal(undo.status,202);
  result=await finished();assert.equal(result.transactions[0].status,'missing');assert.equal(result.transactions[0].color,null);assert.equal(result.transactions[0].manualDecision,'unmatched');
  assert.equal((await api('/jobs/'+job.id+'/month',{action:'close'})).status,409);
@@ -73,15 +73,15 @@ test('Portal ↔ Windows-Dienst: echte lokale HTTP-Kopplung, PDF und manuelle Au
  assert.equal((await api('/jobs',request)).status,403);
  const disabledState=(await(await api('/companies')).json()).companies.find(c=>c.id==='tc');assert.equal(disabledState.enabled,false);assert.equal(disabledState.canConnect,true);
  assert.equal((await api('/microsoft/tc/connect',{})).status,200);
- assert.equal((await api('/microsoft/tc/connect',{},other.cookie,other.csrfToken)).status,403);
+ assert.equal((await api('/microsoft/tc/connect',{},other.cookie,other.csrfToken)).status,200);
  company.enabled=true;config.mode='local';
  // A late supplier invoice can be attached to a finished job without another mail/OCR full run.
  const urbanPdf=await fixture(['TestConsulting CC GmbH','Rechnungssteller: Urban Sports GmbH','Rechnungsnummer: USC-123456','Gesamtbetrag: 99,80 EUR']);
  company.allowedUsers=['pilot@example.invalid','other@example.invalid'];
  const lateUpload={source:'urban_sports_club',name:'Urban_Invoice.pdf',data:urbanPdf.toString('base64'),jobId:job.id};
- assert.equal((await api('/imports/tc',lateUpload,other.cookie,other.csrfToken)).status,404);
+ // The second authenticated account may attach receipts to the shared job.
  assert.equal((await api('/imports/tc',{...lateUpload,name:'Bank.pdf',data:bank.toString('base64')})).status,400);
- const beforeImport=await(await api('/jobs/'+job.id)).json(),attachedResponse=await api('/imports/tc',lateUpload);assert.equal(attachedResponse.status,201);
+ const beforeImport=await(await api('/jobs/'+job.id)).json(),attachedResponse=await api('/imports/tc',lateUpload,other.cookie,other.csrfToken);assert.equal(attachedResponse.status,201);
  const attachedResult=await attachedResponse.json();assert.equal(attachedResult.status,'attached_unassigned');assert.equal(attachedResult.jobId,job.id);const attachedFile=await api('/jobs/'+job.id+'/files/'+attachedResult.documentId);assert.equal(attachedFile.status,200);assert.equal(hash(Buffer.from(await attachedFile.arrayBuffer())),hash(urbanPdf));
  const afterImport=await(await api('/jobs/'+job.id)).json();assert.equal(afterImport.documents.length,beforeImport.documents.length+1);assert.equal(afterImport.transactions[0].status,beforeImport.transactions[0].status);assert.equal(afterImport.documents.find(d=>d.id===attachedResult.documentId).portalImport.source,'urban_sports_club');
  const sourceCatalog=await(await api('/sources/tc')).json();assert.equal(sourceCatalog.sources.find(s=>s.id==='urban_sports_club').url,'https://portal.urbansportsclub.com/login');

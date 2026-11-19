@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path');
 function configure(root,payload,{tcPilotMode}={}){
  const {config,runnerSecret}=payload;
  if(!['remote','cloud'].includes(config?.mode)||!config.companies?.tc?.enabled||(config.mode==='remote'&&! /^[A-Za-z0-9_-]{43,128}$/.test(runnerSecret||'')))throw Error('Ungültige private FIBU-Konfiguration.');
- if(!config.companies.tc.allowedUsers?.length||!config.microsoft?.tenantId||!config.microsoft?.clientId)throw Error('Firmenbenutzer oder Microsoft-App fehlen.');
+ if(!config.microsoft?.tenantId||!config.microsoft?.clientId)throw Error('Firmenbenutzer oder Microsoft-App fehlen.');
  if(tcPilotMode!==undefined){if(typeof tcPilotMode!=='boolean')throw Error('Ungültiger TestConsulting-Pilotmodus.');config.companies.tc.pilotMode=tcPilotMode;}
  const data=path.join(root,'data'),file=path.join(data,'fibu.config.json'),env=path.join(root,'.env');
  fs.mkdirSync(data,{recursive:true});

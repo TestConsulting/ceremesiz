@@ -730,7 +730,7 @@ function renderNav(r){
     const entry=sidebarEntry('groups',g.co,CO[g.co].n);
     return `<div class="nav-grp"><div class="nav-grp-h ${entry.beta?'beta':''}"><span class="dot" style="background:${CO[g.co].c}"></span>${esc(entry.name)}${sidebarBadge(entry)}</div>
     ${g.items.map(([id,name])=>sidebarLink(id,name,r)).join('')}</div>`;
-  }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a>`;
+  }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a><a href="#settings-fibu" class="${r==='settings-fibu'?'on':''}" style="padding-left:30px">FiBu</a>`;
 }
 
 /* ---------------- Daten: Renditekalkulation ---------------- */
@@ -863,7 +863,7 @@ if(!emps){
 }
 
 /* ---------------- Routing ---------------- */
-const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT,settings:viewSettings};
+const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT,settings:viewSettings,'settings-fibu':()=>viewFibuSettings()};
 function route(){
   const h=curRoute||'dashboard';
   if(!auth.get()){location.replace('/#login');return}
@@ -886,7 +886,7 @@ function viewSettings(){
     const entry=sidebarEntry(kind,id,defaultName),field=`setting-${kind}-${id}`;
     return `<div class="settings-row"><label for="${field}">${esc(defaultName)}</label><input id="${field}" type="text" data-kind="${kind}" data-id="${id}" value="${esc(entry.name)}" maxlength="60" required><label class="settings-beta"><input type="checkbox" data-beta="${kind}-${id}" ${entry.beta?'checked':''}> Beta</label></div>`;
   };
-  $('#main').innerHTML=head(null,'Einstellungen','Seitenleiste verwalten')+`
+  $('#main').innerHTML=head(null,'Einstellungen','Seitenleiste verwalten','<a class="btn" href="#settings-fibu">FiBu-Konfiguration</a>')+`
     <form id="sidebarSettingsForm" class="panel">
       <div class="panel-h"><h2>Namen und Beta-Status</h2></div>
       <p class="muted">Diese Einstellungen gelten für alle Benutzer. Andere offene Sitzungen sehen Änderungen nach dem Neuladen.</p>

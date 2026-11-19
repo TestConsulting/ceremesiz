@@ -1,3 +1,11 @@
+## Gemeinsame FiBu und konfigurierbare Regeln (19.11.2026)
+
+Alle angemeldeten Portalbenutzer teilen die eingerichteten FiBu-Firmen und deren Einträge, Läufe, Belege und Regeln. Es gibt keine zusätzliche FiBu-Benutzerfreigabe. Die bestehende Microsoft-Firmenverbindung wird über den stabilen technischen Arbeitsbereichsinhaber verwendet; die verschlüsselten Token werden nicht zwischen Konten kopiert. Anmeldung und CSRF-/Origin-Prüfungen bleiben aktiv.
+
+Unter **Einstellungen → FiBu** sind Reihenfolge, Suchbegriffe, Suchfeld, Übereinstimmung, Buchungsrichtung, Farbe, Hinweis und Aktivierung editierbar. Speicherung erfolgt firmenweit in SQLite mit Versionsprüfung. Acht Krankenkassen sind standardmäßig in beiden Buchungsrichtungen lila und belegfrei; konfigurierte positive Rechnungsgutschriften sind grün und ebenfalls belegfrei. Für ignorierte Buchungen werden keine zusätzlichen Rechnungsreferenzen gesucht und keine Belege in den Zielmonat übernommen. Vorhandene, sonst nicht zugeordnete Dateien werden nach `00_Nicht zugewiesene Belege` verschoben. Normale Belastungen derselben Firmen bleiben belegpflichtig.
+
+Die Aktion **Vollständig setzen** kennzeichnet den FiBu-Eintrag manuell in Grün, unabhängig von der Zahl automatisch zugeordneter Buchungen. Sie startet keinen Lauf und ersetzt keinen fachlichen Monatsabschluss. Beide Benutzer können sie rückgängig machen. Ein neu gestarteter Lauf hebt diese manuelle Kennzeichnung auf.
+
 # Astra FIBU – Serverbetrieb
 
 Astra erweitert das vorhandene private Holding-Portal (Express, SQLite, bestehende Login-Sessions). Der gewünschte Standard ist `mode: cloud`: Die Prüfung wird auf dem Server ausgeführt und kann vom Handy gestartet werden. Der Windows-PC, sein OneDrive-Synchronisationsclient und ein Windows-Dienst werden dafür nicht benötigt.
@@ -23,7 +31,7 @@ Astra erweitert das vorhandene private Holding-Portal (Express, SQLite, bestehen
 
 Betrag allein erzeugt keine automatische Zuordnung. Betrag plus Rechnungsreferenz oder eindeutiger Rechnungssteller werden benötigt; widersprüchliche Summen und mehrfach passende Belege bleiben offen. Teil-/Sammelzahlungen werden nur bei eindeutigen Referenzen und geprüfter Gesamtsumme bestätigt.
 
-Grün kennzeichnet konfigurierte positive Gutschriften; der Beleg kann trotzdem fehlen. Lila folgt den ausdrücklich konfigurierten betrieblichen Ausnahmen. PayCenter-Abrechnungsgebühren bleiben belegpflichtig. Gelb bedeutet verifizierte Ablage eines Belegs. Eigene Markierungen werden stets aus der unveränderten Bank neu erzeugt; Text und Seitenzahl werden anschließend geprüft.
+Grün kennzeichnet konfigurierte positive Rechnungsgutschriften ohne Belegbedarf und ohne Belegübernahme. Lila folgt den ausdrücklich konfigurierten betrieblichen Ausnahmen. PayCenter-Abrechnungsgebühren bleiben belegpflichtig. Gelb bedeutet verifizierte Ablage eines Belegs. Eigene Markierungen werden stets aus der unveränderten Bank neu erzeugt; Text und Seitenzahl werden anschließend geprüft.
 
 `ocrEnabled: true` liest Bilder und gescannte PDFs lokal auf dem ausführenden Server. Deutsch/Englisch und Modelle werden mit der Anwendung installiert; Dokumente werden an keinen OCR-Anbieter übertragen. Maximal zehn Seiten, 16 Millionen Pixel je Seite und 120 Sekunden je Dokument. OCR läuft in einem getrennten Prozess und liefert ausschließlich prüfpflichtige Vorschläge. Automatisches Matching bleibt bis zur Bestätigung am Original gesperrt. Firma, EUR-Bruttobetrag, Rechnungssteller, Referenz, Datum, Benutzer, Hash und Begründung werden für diese Bestätigung gespeichert.
 

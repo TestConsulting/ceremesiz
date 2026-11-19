@@ -2,6 +2,7 @@
  const result=new Set();
  const add=ref=>{if(typeof ref==='string'&&/^[A-Z0-9][A-Z0-9/.-]{4,79}$/i.test(ref)&&/\d/.test(ref))result.add(ref.replace(/[.-]+$/,''));};
  for(const t of transactions){
+  if(t.skipReceipt||t.status==='not_required')continue;
   const text=t.description||'',party=t.counterparty||'';
   const labelled=/\b(?:Rechnungs?[- \t]*(?:nummer|Nr\.?)|Rechnung|Invoice(?:[ \t]+(?:number|no\.?))?|RG[- \t]*Nr\.?|RNR)[ \t.:#-]*([A-Z0-9][A-Z0-9/.-]{4,59})/gi;
   for(const m of text.matchAll(labelled))add(m[1]);

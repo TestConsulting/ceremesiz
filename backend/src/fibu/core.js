@@ -23,11 +23,12 @@ async function inside(root, input, kind = 'file') {
   return real;
 }
 function classify(t, company) {
+  const custom=require('./rules').matchRule(t,company.ignoreRules);if(custom)return custom;
   const s = norm(t.description);
   const green = company.greenCounterparties || [];
   const partner=n=>norm(n).replace(/(?:gmbhundcokg|gmbhcokg|gmbh|ag)$/,'');
   // Green requires an identified counterparty; purpose mentions do not qualify.
-  if (t.amount > 0 && green.some(n => partner(t.counterparty) === partner(n))) return { color: 'green', rule: 'Konfigurierte positive Gutschrift' };
+  if (t.amount > 0 && green.some(n => partner(t.counterparty) === partner(n))) return { color: 'green', rule: 'Konfigurierte positive Gutschrift – kein Beleg notwendig',skipReceipt:true };
   const fee = /sachbezugsabrechnung|kartengebu(?:e)?hr|kartenentgelt/.test(s)||(s.includes('paycenter')&&/abrechnung|gebu(?:e)?hr|entgelt/.test(s));
   if (company.payrollExceptions === true && t.amount < 0 && !fee &&
       (/ktolohn|vorschussu(?:e)?berweisung|steuerfreiesachleistung|sachbezugs?karten?aufladung/.test(s) || (s.includes('vorschuss')&&/u(?:e)?berweisung|dauerauftrag/.test(s)) ||

@@ -9,15 +9,15 @@ function loadConfig() {
     if(c.mode==='cloud'&&v.enabled&&(id==='tc'||v.pilotAccepted===true))require('./onedrive').cleanPath(v.cloud?.rootPath);
     if(v.ocrEnabled!==undefined&&typeof v.ocrEnabled!=='boolean')fail('OCR-Freischaltung muss true oder false sein: '+id,503);
     if(v.pilotMode!==undefined&&typeof v.pilotMode!=='boolean')fail('Pilotmodus muss true oder false sein: '+id,503);
-    if(!names[id] || !v.root || !v.collectionFolder || !v.accountHolder || !v.iban || !v.documentCompanyName || !Array.isArray(v.allowedUsers)) fail('Unvollständige Firmenkonfiguration: '+id,503);
-    if(typeof v.enabled!=='boolean'||v.allowedUsers.some(e=>typeof e!=='string'||!e.includes('@'))||(v.greenCounterparties!==undefined&&(!Array.isArray(v.greenCounterparties)||v.greenCounterparties.some(s=>typeof s!=='string'||!s.trim()))))fail('Ungültige Freischaltung/Benutzer-/Gegenparteienkonfiguration: '+id,503);
+    if(!names[id] || !v.root || !v.collectionFolder || !v.accountHolder || !v.iban || !v.documentCompanyName) fail('Unvollständige Firmenkonfiguration: '+id,503);
+    if(typeof v.enabled!=='boolean'||(v.allowedUsers!==undefined&&(!Array.isArray(v.allowedUsers)||v.allowedUsers.some(e=>typeof e!=='string'||!e.includes('@'))))||(v.greenCounterparties!==undefined&&(!Array.isArray(v.greenCounterparties)||v.greenCounterparties.some(s=>typeof s!=='string'||!s.trim()))))fail('Ungültige Freischaltung/Benutzer-/Gegenparteienkonfiguration: '+id,503);
     if(id!=='tc' && v.pilotAccepted!==true) v.enabled=false;
   }
   return c;
 }
 function companyFor(config,user,id,{allowDisabled=false}={}) {
   const c=config.companies?.[id];
-  if(!c || (!allowDisabled&&!c.enabled) || !c.allowedUsers.some(e=>e.toLowerCase()===user.email.toLowerCase())) fail('Firma nicht freigeschaltet oder kein Zugriff.',403);
+  if(!c || (!allowDisabled&&!c.enabled)) fail('FiBu-Verbindung für diese Firma ist noch nicht eingerichtet.',403);
   return c;
 }
 module.exports={loadConfig,companyFor,names};

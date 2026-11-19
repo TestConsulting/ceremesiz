@@ -3,14 +3,17 @@ const path=require('node:path');
 const fs=require('node:fs/promises');
 const {requireAuthApi}=require('../middleware/auth');
 const {requireCsrf,requireSameOriginJson}=require('../middleware/csrf');
-const {loadConfig,companyFor,names}=require('../fibu/config');
+const {loadConfig,companyFor:baseCompanyFor,names}=require('../fibu/config');
 const {createStore}=require('../fibu/store');
 const {engine}=require('../fibu/engine');
 const {microsoft}=require('../fibu/microsoft');
 const {inside,monthFromFolder,hash,fail,classify,writeVerified}=require('../fibu/core');
 module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
-  const router=express.Router(),store=createStore(db);
-  ms=ms||microsoft(config,config.mode==='cloud'?{vault:require('../fibu/token-vault').tokenVault(db)}:{});
+  const router=express.Router(),store=require('../fibu/shared-store').sharedStore(db,createStore(db));
+  const rules=require('../fibu/rules').ruleStore(db);
+  const companyFor=(config,user,id,options)=>rules.effective(id,baseCompanyFor(config,user,id,options));
+  ms=ms||microsoft(config,config.mode==='cloud'?{vault:require('../fibu/token-vault').tokenVault(db),resolveOwner:store.primaryOwner}:{});
+  const directMs=ms;ms=new Proxy(directMs,{get(target,key){const value=target[key];if(typeof value!=='function')return value;return (...args)=>{if(typeof args[0]==='number'&&typeof args[1]==='string')args[0]=store.primaryOwner(args[0],args[1]);return value.apply(target,args);};}});
   const worker=engine({store,config,ms}),cloud=require('../fibu/cloud').cloudWorker({store,worker,ms});
   store.recover();
   router.use(requireAuthApi,(req,res,next)=>{res.set('Cache-Control','no-store');next();});
@@ -52,9 +55,12 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     return {id,name,enabled,canConnect,cloudMonthBase:canConnect?config.companies?.[id]?.cloud?.monthBasePath:null,runnerOnline:!!seen&&Date.now()-Date.parse(seen)<30000,runnerLastSeen:seen||null,documentCompanyName:canConnect?config.companies?.[id]?.documentCompanyName:null,pilotMode:config.companies?.[id]?.pilotMode===true,microsoftConfigured:ms.configured,canWrite:canConnect&&!!ms.canWrite?.(req.user.id,id),connected:canConnect&&ms.connected(req.user.id,id)};
   })}));
   router.get('/months',(req,res)=>{companyFor(config,req.user,req.query.companyId);const all=store.folders(req.user.id,req.query.companyId,{includeHidden:true}).filter(m=>config.mode!=='cloud'||m.storageMode==='cloud');res.json({months:all.filter(m=>!m.removedAt),removed:all.filter(m=>m.removedAt).map(({id,name,label,month,removedAt})=>({id,name,label,month,removedAt}))});});
+  router.get('/rules/:companyId',(req,res)=>{const c=baseCompanyFor(config,req.user,req.params.companyId);res.json(rules.get(req.params.companyId,c));});
+  router.post('/rules/:companyId',...write,(req,res)=>{const c=baseCompanyFor(config,req.user,req.params.companyId);res.json(rules.save(req.params.companyId,c,req.body,req.user.email));});
+  router.post('/months/:id/completion',...write,(req,res)=>{const company=req.body.companyId;companyFor(config,req.user,company);if(typeof req.body.complete!=='boolean')fail('Status vollständig angeben.',400);const entry=store.folders(req.user.id,company).find(m=>m.id===req.params.id);if(!entry)fail('FiBu-Eintrag nicht gefunden.',404);if(store.profileActive(req.user.id,company,entry.id))fail('Laufenden Prüflauf zuerst beenden.',409);store.putFolder(req.user.id,company,entry.id,{...entry,completed:req.body.complete,completedAt:new Date().toISOString(),completedBy:req.user.email});res.json({completed:req.body.complete});});
   router.get('/settings/:companyId',(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId);
-    res.json({mailbox:c.mailbox||'epost@testconsulting.de',mode:config.mode,pilotMode:c.pilotMode===true,ocrEnabled:c.ocrEnabled===true,greenCounterparties:c.greenCounterparties||[],payrollExceptions:c.payrollExceptions===true,mailStorage:config.mode==='cloud'?'privateServer':'configuredCollection',collectionSource:config.mode==='cloud'?(c.cloud.collectionPath?[c.cloud.rootPath,c.cloud.collectionPath].filter(Boolean).join('/'):null):c.collectionFolder});
+    res.json({mailbox:c.mailbox||'epost@testconsulting.de',mode:config.mode,pilotMode:c.pilotMode===true,ocrEnabled:c.ocrEnabled===true,greenCounterparties:(c.ignoreRules||[]).filter(r=>r.enabled&&r.color==='green').map(r=>r.label),payrollExceptions:c.payrollExceptions===true,mailStorage:config.mode==='cloud'?'privateServer':'configuredCollection',collectionSource:config.mode==='cloud'?(c.cloud.collectionPath?[c.cloud.rootPath,c.cloud.collectionPath].filter(Boolean).join('/'):null):c.collectionFolder});
   });
   router.post('/months/:id/remove',...write,(req,res)=>{
     const b=req.body;companyFor(config,req.user,b.companyId);
@@ -103,8 +109,8 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
       require('../fibu/onedrive').cleanPath(b.monthFolderPath,{empty:true});
       require('../fibu/onedrive').cleanPath(b.bankPdfPath);if(! /\.pdf$/i.test(b.bankPdfPath)||/_Astra(?:_|\.)/i.test(b.bankPdfPath))fail('Original-Bank-PDF wählen.',400);
       if(!ms.connected(req.user.id,b.companyId))fail('Microsoft zuerst verbinden.',409);
-      const job=store.enqueue(req.user.id,{companyId:b.companyId,folderId:b.folderId||undefined,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,sourceBankIsDrivePath:b.bankDrivePath===true,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
-      res.status(202).json(job);setImmediate(()=>cloud.run(job.id,req.user.id,c));return;
+      const job=store.enqueue(req.user.id,{requestedBy:req.user.email,companyId:b.companyId,folderId:b.folderId||undefined,month,sourceMonthPath:b.monthFolderPath,sourceBankName:b.bankPdfPath,sourceBankIsDrivePath:b.bankDrivePath===true,monthFolderPath:b.monthFolderPath,bankPdfPath:b.bankPdfPath,bankHash:null});
+      if(b.folderId){const profile=store.folders(req.user.id,b.companyId).find(m=>m.id===b.folderId);if(profile?.completed)store.putFolder(req.user.id,b.companyId,b.folderId,{...profile,completed:false});}res.status(202).json(job);setImmediate(()=>cloud.run(job.id,job.owner,c));return;
     }
     if(config.mode==='remote') {
       if(typeof b.bankPdfPath!=='string'||b.bankPdfPath.length>2000||! /\.pdf$/i.test(b.bankPdfPath)||b.bankPdfPath.split(/[\\/]/).includes('..'))fail('Gültigen Bank-PDF-Pfad angeben.',400);
@@ -116,7 +122,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     const bytes=await fs.readFile(bank);if(bytes.subarray(0,5).toString()!=='%PDF-')fail('PDF ungültig.',400);
     const job=store.enqueue(req.user.id,{companyId:b.companyId,folderId:b.folderId||undefined,month,monthFolderPath:folder,bankPdfPath:bank,bankHash:hash(bytes)});
     res.status(202).json(job);
-    setImmediate(()=>worker.run(job.id,req.user.id,c));
+    setImmediate(()=>worker.run(job.id,job.owner,c));
   });
   router.get('/jobs/:id',(req,res)=>res.json(jobFor(req)));
   router.post('/jobs/:id/receipts',...write,async(req,res)=>{const job=jobFor(req),c=companyFor(config,req.user,job.companyId);if(config.mode!=='cloud'||job.execution!=='server'||store.hasActive(job.companyId,job.month)||store.isClosed(job.companyId,job.month,job.folderId))fail('Belegablage nur nach einem beendeten, offenen Serverlauf ergänzen.',409);try{await worker.exportResult(job,c);}finally{store.save(job);}res.json({publication:job.receiptPublication});});
@@ -129,7 +135,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
     require('../fibu/review').validateReview(req.body,c);
     if(config.mode==='remote'){job.pendingReview={type:'document',documentId:d.id,details:req.body};return res.status(202).json(store.save(job,'queued'));}
     store.save(job,'running');worker.running.add(job.id);
-    try{await worker.verifyDocument(job,d,req.body,c);await worker.exportResult(job,c);store.save(job);res.json(job);}
+    try{await worker.verifyDocument(job,d,req.body,c,req.user.id);await worker.exportResult(job,c);store.save(job);res.json(job);}
     catch(e){job.issues.push('Belegprüfung unterbrochen; gespeicherte Bestätigung und Ausgabe prüfen.');store.save(job,'partial');throw e;}
     finally{worker.running.delete(job.id);}
   });
