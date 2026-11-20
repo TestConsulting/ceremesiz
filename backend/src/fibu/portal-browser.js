@@ -76,12 +76,12 @@ async function runBrowser(input,callbacks){
   if(session){session.cookies=(session.cookies||[]).filter(c=>definition.domains.some(d=>c.domain.replace(/^\./,'')===d||!definition.exactHosts&&c.domain.endsWith('.'+d)));session.origins=(session.origins||[]).filter(o=>{try{allowedUrl(provider,o.origin,definition);return true;}catch{return false;}});}
   const context=await browser.newContext({acceptDownloads:true,serviceWorkers:'block',...(session?{storageState:session}:{})});
   await context.route('**/*',async route=>{
-   try{const request=route.request(),url=new URL(request.url());try{allowedUrl(provider,url.href,definition);}catch{if(request.method()!=='GET'||!['script','stylesheet','image','font'].includes(request.resourceType())||!resources.includes(url.hostname))throw Error();allowedUrl(provider,url.href,networkDefinition);}let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{try{blocked.add(new URL(route.request().url()).hostname+':'+route.request().resourceType());}catch{}await route.abort();}
+   try{const request=route.request(),url=new URL(request.url());try{allowedUrl(provider,url.href,definition);}catch{if(request.method()!=='GET'||!(['script','stylesheet','image','font'].includes(request.resourceType())||url.hostname==='challenges.cloudflare.com'&&request.resourceType()==='document'&&request.frame()!==page.mainFrame())||!resources.includes(url.hostname))throw Error();allowedUrl(provider,url.href,networkDefinition);}let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{try{blocked.add(new URL(route.request().url()).hostname+':'+route.request().resourceType());}catch{}await route.abort();}
   });
   await context.routeWebSocket('**/*',socket=>socket.close());
   page=await context.newPage();page.setDefaultTimeout(12000);
   return await automate(page,context,account,month,{...callbacks,testOnly:input.testOnly===true});
- }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}e.diagnostics={route,blockedHosts:[...blocked].slice(0,25)};throw e;
+ }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
 module.exports={automate,runBrowser,periodText,publicAddress};
