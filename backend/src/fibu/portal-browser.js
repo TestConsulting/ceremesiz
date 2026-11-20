@@ -16,7 +16,7 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
  await page.goto(account.loginUrl,{waitUntil:'domcontentloaded',timeout:30000});
  const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Reject all|Only necessary cookies)$/i}).first();
  if(await cookies.isVisible().catch(()=>false))await cookies.click();
- await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:10000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:10000})]).catch(()=>{});
+ await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:30000}),page.locator(fill(user)).first().waitFor({state:'visible',timeout:30000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:30000})]).catch(()=>{});
  if(!await visible(password)&&await visible(user)){
   await page.locator(fill(user)).first().fill(account.username);
   await page.getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).first().click({timeout:10000});
