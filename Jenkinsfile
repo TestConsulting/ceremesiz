@@ -17,7 +17,13 @@ rollback="ceremesiz-app-backend:rollback-$BUILD_NUMBER"
 if docker image inspect "$previous" >/dev/null 2>&1; then
   docker image tag "$previous" "$rollback"
 else
-  docker commit --pause=false "$running" "$rollback" >/dev/null
+  previousCommit="${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}"
+  if test -s backend/data/deployed-commit.txt; then previousCommit="$(cat backend/data/deployed-commit.txt)"; fi
+  test -n "$previousCommit"
+  git cat-file -e "$previousCommit^{commit}"
+  mkdir -p "$backup/rollback-source"
+  git archive "$previousCommit" | tar -x -C "$backup/rollback-source"
+  docker build --pull -t "$rollback" -f "$backup/rollback-source/backend/Dockerfile" "$backup/rollback-source"
 fi
 printf '%s\\n' "$rollback" > "$backup/image.txt"
 cp -p backend/.env "$backup/backend.env"
@@ -61,6 +67,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
 done
 test "$ok" = 1
 curl --fail --silent --show-error https://www.ceremesiz-holding.de/health
+git rev-parse HEAD > backend/data/deployed-commit.txt
 docker compose ps
 '''
       }
