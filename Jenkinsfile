@@ -11,7 +11,15 @@ backup="$PWD/backend/data/deploy-backup-$BUILD_NUMBER"
 mkdir -p "$backup"
 chmod 700 "$backup"
 git rev-parse HEAD > "$backup/commit.txt"
-docker compose images -q backend > "$backup/image.txt"
+running="$(docker compose ps -q backend)"
+previous="$(docker inspect --format '{{.Image}}' "$running")"
+rollback="ceremesiz-app-backend:rollback-$BUILD_NUMBER"
+if docker image inspect "$previous" >/dev/null 2>&1; then
+  docker image tag "$previous" "$rollback"
+else
+  docker commit --pause=false "$running" "$rollback" >/dev/null
+fi
+printf '%s\\n' "$rollback" > "$backup/image.txt"
 cp -p backend/.env "$backup/backend.env"
 if test -f backend/data/fibu.config.json; then cp -p backend/data/fibu.config.json "$backup/fibu.config.json"; fi
 docker compose exec -T --user root -e "ASTRA_BACKUP_NAME=deploy-backup-$BUILD_NUMBER" backend node -e 'const D=require("better-sqlite3"),d=new D(process.env.DB_PATH),p="/app/backend/data/"+process.env.ASTRA_BACKUP_NAME+"/ceremesiz.db";d.backup(p).then(()=>{require("fs").chmodSync(p,384);d.close()}).catch(()=>process.exit(1))'
