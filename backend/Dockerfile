@@ -20,6 +20,10 @@ WORKDIR /app/backend
 
 COPY --from=deps /app/backend/node_modules ./node_modules
 COPY backend/package.json ./
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/astra-browsers
+RUN npx playwright install --with-deps --only-shell chromium \
+    && chmod -R a+rX /opt/astra-browsers \
+    && rm -rf /var/lib/apt/lists/*
 COPY backend/src ./src
 COPY backend/private ./private
 COPY backend/vendor ./vendor

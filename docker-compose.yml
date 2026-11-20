@@ -1,5 +1,9 @@
 services:
   backend:
+    init: true
+    shm_size: 256mb
+    security_opt:
+      - seccomp=./backend/browser-seccomp.json
     build:
       context: .
       dockerfile: backend/Dockerfile

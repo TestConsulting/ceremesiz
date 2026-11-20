@@ -24,6 +24,7 @@
     "express-rate-limit": "^8.7.2",
     "express-session": "^1.19.0",
     "pdfjs-dist": "^6.5.438",
+    "playwright": "1.65.1",
     "tesseract.js": "^7.0.0"
   }
 }

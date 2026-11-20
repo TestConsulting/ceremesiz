@@ -8,7 +8,7 @@ const {createStore}=require('../fibu/store');
 const {engine}=require('../fibu/engine');
 const {microsoft}=require('../fibu/microsoft');
 const {inside,monthFromFolder,hash,fail,classify,writeVerified}=require('../fibu/core');
-module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
+module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms,portalExecute}) {
   const uiVersion=require('../fibu/ui-version')();
   const router=express.Router(),store=require('../fibu/shared-store').sharedStore(db,createStore(db));
   const setup=require('../fibu/company-setup').companySetup(db,config);setup.restore();
@@ -16,13 +16,25 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms}) {
   const companyFor=(config,user,id,options)=>rules.effective(id,baseCompanyFor(config,user,id,options));
   ms=ms||microsoft(config,config.mode==='cloud'?{vault:require('../fibu/token-vault').tokenVault(db),resolveOwner:store.primaryOwner}:{});
   const directMs=ms;ms=new Proxy(directMs,{get(target,key){const value=target[key];if(typeof value!=='function')return value;return (...args)=>{if(typeof args[0]==='number'&&typeof args[1]==='string')args[0]=store.primaryOwner(args[0],args[1]);return value.apply(target,args);};}});
-  const worker=engine({store,config,ms}),cloud=require('../fibu/cloud').cloudWorker({store,worker,ms});
+  const portals=require('../fibu/portals').portals({db,store,execute:portalExecute});
+  const worker=engine({store,config,ms,portals}),cloud=require('../fibu/cloud').cloudWorker({store,worker,ms});
   store.recover();
   router.use(requireAuthApi,(req,res,next)=>{res.set({'Cache-Control':'no-store','X-FiBu-UI-Version':uiVersion});next();});
   const write=[requireSameOriginJson(allowedOrigins),requireCsrf];
+  router.get('/portals/:companyId',(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.list(req.params.companyId));});
+  router.post('/portals/:companyId/:provider',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.save(req.params.companyId,req.params.provider,req.body,req.user.email));});
+  router.post('/portals/:companyId/:provider/run',...write,(req,res)=>{
+    const c=companyFor(config,req.user,req.params.companyId),company=req.params.companyId,provider=req.params.provider;
+    if(config.mode!=='cloud')fail('Portalabruf benötigt Serverbetrieb.',409);
+    if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(req.body.month))fail('Prüfmonat angeben.',400);
+    const a=portals.list(company).accounts.find(a=>a.id===provider);if(!a?.enabled)fail('Aktiven Portalzugang hinterlegen.',409);
+    portals.start(company,provider,req.body.month,c,store.primaryOwner(req.user.id,company));res.status(202).json(portals.status(company,provider));
+  });
+  router.post('/portals/:companyId/:provider/code',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);portals.code(req.params.companyId,req.params.provider,req.body.taskId,req.body.code);res.json({accepted:true});});
+  router.post('/portals/:companyId/:provider/cancel',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);portals.cancel(req.params.companyId,req.params.provider);res.json({accepted:true});});
   router.post('/setup/immo',...write,async(req,res)=>{if(req.body?.confirmCompanySetup!==true)fail('Freigabe der AC-Immo-Einrichtung erforderlich.',400);const value=setup.prepare(req.body);await fs.mkdir(value.root,{recursive:true,mode:0o700});res.status(201).json(setup.install(value,req.user.id));});
   router.get('/onedrive/:companyId',async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);if(config.mode!=='cloud')fail('Direkter OneDrive-Zugriff nicht aktiviert.',409);const relative=req.query.path??c.cloud.monthBasePath??'';require('../fibu/onedrive').cleanPath(relative,{empty:true});res.json({path:relative,entries:await ms.driveList(req.user.id,req.params.companyId,relative),...(ms.driveFolder?await ms.driveFolder(req.user.id,req.params.companyId,relative):{})});});
-  router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
+  router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c).map(s=>{const a=portals.list(req.params.companyId).accounts.find(a=>a.id===s.id);return {...s,status:a?.configured?a.status.message:s.status,automatic:a?.enabled&&a?.automatic,mode:a?.enabled?'server':'manual_download'};}),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
   router.post('/imports/:companyId',...write,express.json({limit:'36mb'}),async(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId),d=require('../fibu/sources').validateImport(req.body);
     let attachedJob=null,metadata=null,extracted=null;

@@ -26,7 +26,7 @@ git rev-parse HEAD
 cd /var/www/ceremesiz-app
 docker compose build backend
 image="$(docker image inspect --format '{{.Id}}' ceremesiz-app-backend:latest)"
-docker run --rm --network none --entrypoint node "$image" --test --test-concurrency=1
+docker run --rm --network none --security-opt "seccomp=$PWD/backend/browser-seccomp.json" --shm-size=256m -e ASTRA_REQUIRE_BROWSER_TEST=1 --entrypoint node "$image" --test --test-concurrency=1
 '''
       }
     }

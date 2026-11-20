@@ -3,7 +3,7 @@ const path=require('node:path');
 const {hash,inside,fail,monthFromFolder,classify,match,allocations,astraName,writeVerified}=require('./core');
 const pdf=require('./pdf');
 const {advance}=require('./progress');
-function engine({store,config,ms}) {
+function engine({store,config,ms,portals}) {
   const running=new Set(),extractions=new Map();
   function extractReceipt(bytes,isPdf,c){
     const key=hash(bytes)+':'+(c.ocrEnabled===true);
@@ -105,6 +105,7 @@ function engine({store,config,ms}) {
           try {const file=await inside(c.root,r.path);if(hash(await fs.readFile(file))===r.hash&&!job.documents.some(d=>d.hash===r.hash)){const d=await document(file,c,{source:'previous'});job.documents.push(require('./review').applyReview(d,store.documentReview(owner,job.companyId,d.hash),c));}}
         catch{job.issues.push('Früherer Beleg nicht mehr verifiziert: '+r.name);}
       }
+      if(portals){event(job,'Fehlende Lieferantenbelege werden serverseitig gesucht.');await portals.forJob(job,c,owner,()=>checkpoint(job));for(const imported of store.imports(owner,job.companyId)){if(!job.portalChecks?.some(p=>p.files?.some(f=>f.hash===imported.hash))||job.documents.some(d=>d.hash===imported.hash))continue;try{job.documents.push(await document(imported.path,c,{source:'collection',portalImport:imported}));}catch{job.issues.push('Portalbeleg konnte nicht ausgelesen werden: '+imported.originalName);}}}
       const matchDocuments=require('./core').canonicalDocuments(job.documents);
       const matchingTransactions=job.transactions.filter(t=>!classify(t,c).skipReceipt&&classify(t,c).color!=='purple');
       const crossGroups=require('./cross-check').qualifiedCrossChecks(matchingTransactions,matchDocuments,c);

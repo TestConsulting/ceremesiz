@@ -55,9 +55,10 @@ function verifyStatement(extracted, config, month) {
 function receiptMetadata(extracted, config) {
   const text = extracted.text;
   const companies = ['TestConsulting CC GmbH', 'AC Immo Invest GmbH', 'Ceremesiz Holding'];
-  const found = companies.filter(c => norm(text).includes(norm(c)));
+  const companyText=text.replace(/AC[ \t]+Immo[ \t]+Invest(?![ \t]+GmbH)\b/gi,'AC Immo Invest GmbH');
+  const found = companies.filter(c => norm(companyText).includes(norm(c)));
   const verified = found.length === 1 && norm(found[0]) === norm(config.documentCompanyName);
-  const totals = [...text.matchAll(/(?:Gesamtbetrag(?:[ \t]+brutto|[ \t]*\(in[ \t]+EUR\))?|Bruttobetrag|Rechnungsbetrag(?:[ \t]*\(Brutto\))?|Gesamtsumme|Zu zahlender Betrag|Total)[ \t]*:?[ \t]*(?:(EUR|€)[ \t]*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})[ \t]*(EUR|€|USD|GBP)?/ig)]
+  const totals = [...text.matchAll(/(?:Gesamtbetrag(?:[ \t]+brutto|[ \t]*\(in[ \t]+EUR\))?|Bruttobetrag|Rechnungsbetrag(?:[ \t]*\(Brutto\))?|Gesamtsumme|Zu zahlender Betrag|Ihr[ \t]+zu[ \t]+zahlender[ \t]+Rückstand(?:[ \t]*\([^\n)]*\))?|Total)[ \t]*:?[ \t]*(?:(EUR|€)[ \t]*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{2})[ \t]*(EUR|€|USD|GBP)?/ig)]
     .filter(m=>(m[1]||/\(in[ \t]+EUR\)/i.test(m[0])||/^(EUR|€)$/i.test(m[3]||''))&&!/USD|GBP/i.test(m[3]||'')).map(m=>money(m[2]));
   const microsoftInvoice=/Microsoft Ireland Operations Ltd/.test(text)&&/Rechnungsnummer\s*:/i.test(text);
   // Microsoft's German invoice separates the EUR header amount from "Summe:".
@@ -73,6 +74,14 @@ function receiptMetadata(extracted, config) {
   const layout=require('./invoice-layouts').outgoing(text,config);
   const evidence=require('./payment-evidence').metadata(text);
   const result={text,verified,amounts,supplier,invoice,invoiceDate:date,...require('./invoice-layouts').extra(text),...(layout||{}),...(evidence?{evidence}:{})};
+  // STAWAG reminders separate the outstanding balance from the final reminder fee.
+  const finalDemand=text.match(/^Gesamtforderung[ \t]+([\d.]+,\d{2})[ \t]*$/im);
+  const balance=text.match(/^Gesamtbetrag[ \t]+([\d.]+,\d{2})[ \t]*$/im);
+  const reminderFee=text.match(/^Mahnkosten[ \t]+([\d.]+,\d{2})[ \t]*$/im);
+  const contract=text.match(/Verwendungszweck:[ \t]*(\d{10,})/i)?.[1];
+  if(/\bSTAWAG\b/.test(text)&&/Betrag in EUR/i.test(text)&&finalDemand&&balance&&reminderFee&&contract&&Math.abs(money(balance[1])+money(reminderFee[1])-money(finalDemand[1]))<.005){
+    Object.assign(result,{amounts:[money(finalDemand[1])],supplier:'STAWAG',invoice:contract,layout:'stawag-final-demand'});
+  }
   result.reason=!verified?'Firma nicht eindeutig verifiziert':!result.amounts.length?'Bruttobetrag nicht eindeutig auslesbar':result.amounts.length>1?'Mehrere widersprüchliche Bruttobeträge':null;return result;
 }
 async function annotate(original, txs) {
