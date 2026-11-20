@@ -22,6 +22,9 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms,por
   router.use(requireAuthApi,(req,res,next)=>{res.set({'Cache-Control':'no-store','X-FiBu-UI-Version':uiVersion});next();});
   const write=[requireSameOriginJson(allowedOrigins),requireCsrf];
   router.get('/portals/:companyId',(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.list(req.params.companyId));});
+  router.post('/portals/:companyId',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.status(201).json(portals.add(req.params.companyId,req.body,req.user.email));});
+  router.post('/portals/:companyId/:provider/remove',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);if(req.body.confirmRemove!==true)fail('Entfernen bestätigen.',400);res.json(portals.remove(req.params.companyId,req.params.provider,req.body.version,req.user.email));});
+  router.post('/portals/:companyId/:provider/restore',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.restore(req.params.companyId,req.params.provider,req.body.version));});
   router.post('/portals/:companyId/:provider',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.save(req.params.companyId,req.params.provider,req.body,req.user.email));});
   router.post('/portals/:companyId/:provider/run',...write,(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId),company=req.params.companyId,provider=req.params.provider;
@@ -34,9 +37,9 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms,por
   router.post('/portals/:companyId/:provider/cancel',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);portals.cancel(req.params.companyId,req.params.provider);res.json({accepted:true});});
   router.post('/setup/immo',...write,async(req,res)=>{if(req.body?.confirmCompanySetup!==true)fail('Freigabe der AC-Immo-Einrichtung erforderlich.',400);const value=setup.prepare(req.body);await fs.mkdir(value.root,{recursive:true,mode:0o700});res.status(201).json(setup.install(value,req.user.id));});
   router.get('/onedrive/:companyId',async(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);if(config.mode!=='cloud')fail('Direkter OneDrive-Zugriff nicht aktiviert.',409);const relative=req.query.path??c.cloud.monthBasePath??'';require('../fibu/onedrive').cleanPath(relative,{empty:true});res.json({path:relative,entries:await ms.driveList(req.user.id,req.params.companyId,relative),...(ms.driveFolder?await ms.driveFolder(req.user.id,req.params.companyId,relative):{})});});
-  router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:require('../fibu/sources').sources(c).map(s=>{const a=portals.list(req.params.companyId).accounts.find(a=>a.id===s.id);return {...s,status:a?.configured?a.status.message:s.status,automatic:a?.enabled&&a?.automatic,mode:a?.enabled?'server':'manual_download'};}),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
+  router.get('/sources/:companyId',(req,res)=>{const c=companyFor(config,req.user,req.params.companyId);res.json({sources:portals.list(req.params.companyId).accounts.map(a=>({id:a.id,name:a.name,url:a.loginUrl,status:a.status.message,automatic:a.enabled&&a.automatic,mode:a.enabled?'server':'manual_download'})),imports:store.imports(req.user.id,req.params.companyId).map(({path,...d})=>d)});});
   router.post('/imports/:companyId',...write,express.json({limit:'36mb'}),async(req,res)=>{
-    const c=companyFor(config,req.user,req.params.companyId),d=require('../fibu/sources').validateImport(req.body);
+    const c=companyFor(config,req.user,req.params.companyId),d=require('../fibu/sources').validateImport(req.body,portals.list(req.params.companyId).accounts.map(a=>a.id));
     let attachedJob=null,metadata=null,extracted=null;
     if(req.body.jobId){
       attachedJob=store.get(req.user.id,req.body.jobId);

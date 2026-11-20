@@ -60,18 +60,19 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
 }
 async function runBrowser(input,callbacks){
  const {chromium}=require('playwright'),{catalog}=require('./portal-catalog'),dns=require('node:dns/promises');
- const {provider,account,month}=input;allowedUrl(provider,account.loginUrl);if(account.invoiceUrl)allowedUrl(provider,account.invoiceUrl);
- const browser=await chromium.launch({headless:true,chromiumSandbox:true}),addresses=new Map();
+ const {provider,account,month}=input,definition=input.definition||catalog[provider];allowedUrl(provider,account.loginUrl,definition);if(account.invoiceUrl)allowedUrl(provider,account.invoiceUrl,definition);
+ const proxy=await require('./portal-proxy').portalProxy(provider,definition);let browser;const addresses=new Map();
  try{
+  browser=await chromium.launch({headless:true,chromiumSandbox:true,proxy:{server:proxy.url}});
   const session=account.session; // Only this supplier's cookies and storage may be reused.
-  if(session){session.cookies=(session.cookies||[]).filter(c=>catalog[provider].domains.some(d=>c.domain.replace(/^\./,'')===d||c.domain.endsWith('.'+d)));session.origins=(session.origins||[]).filter(o=>{try{allowedUrl(provider,o.origin);return true;}catch{return false;}});}
+  if(session){session.cookies=(session.cookies||[]).filter(c=>definition.domains.some(d=>c.domain.replace(/^\./,'')===d||!definition.exactHosts&&c.domain.endsWith('.'+d)));session.origins=(session.origins||[]).filter(o=>{try{allowedUrl(provider,o.origin,definition);return true;}catch{return false;}});}
   const context=await browser.newContext({acceptDownloads:true,serviceWorkers:'block',...(session?{storageState:session}:{})});
   await context.route('**/*',async route=>{
-   try{const url=new URL(route.request().url());allowedUrl(provider,url.href);let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{await route.abort();}
+   try{const url=new URL(route.request().url());allowedUrl(provider,url.href,definition);let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{await route.abort();}
   });
   await context.routeWebSocket('**/*',socket=>socket.close());
   const page=await context.newPage();page.setDefaultTimeout(12000);
   return await automate(page,context,account,month,callbacks);
- }finally{await browser.close();}
+ }finally{await browser?.close();await proxy.close();}
 }
 module.exports={automate,runBrowser,periodText,publicAddress};
