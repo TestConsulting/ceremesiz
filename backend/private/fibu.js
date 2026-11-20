@@ -10,6 +10,10 @@ function fibuTime(s){return s?new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/
 function fibuLabel(s){return ({queued:'Wartet auf Ausführung',running:'Prüfung läuft',waiting_for_user:'Prüfung benötigt Klärung',completed:'Prüfung beendet',partial:'Teilweise geprüft',failed:'Prüfung fehlgeschlagen',cancelled:'Abgebrochen',missing:'Beleg fehlt',manual:'Manuelle Zuordnung',matched:'Beleg zugeordnet',not_required:'Kein Beleg notwendig'})[s]||s;}
 function fibuMonth(s){return s.replace(/[\\/]+$/,'').match(/(?:^|[\\/])(20\d{2})[\\/](0[1-9]|1[0-2])$/)?.slice(1).join('-')||'Jahr/Monat noch nicht erkannt';}
 function fibuCanResume(job){return job?.execution==='server'&&!job.cancelRequested&&['partial','failed','waiting_for_user'].includes(job.state)&&job.workProgress?.percent<100;}
+function fibuMarkingSummary(transactions){
+ const total=transactions.length,marked=transactions.filter(t=>['green','yellow','purple'].includes(t.color)).length;
+ return {total,marked,open:total-marked,matched:transactions.filter(t=>t.status==='matched').length,percent:total?marked/total*100:0};
+}
 function fibuProgress(job){
  const p=job?.workProgress;if(!p)return '';const active=['queued','running'].includes(job.state),percent=p.percent||0;
  const finished=!active&&percent===100&&['completed','partial','waiting_for_user'].includes(job.state);
@@ -58,10 +62,10 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
   let jobs=[],current=null,companyState=null;
   function draw(job) {
     current=job;form.folder.value=job.sourceMonthPath||job.monthFolderPath;form.bank.value=job.sourceBankName||job.bankPdfPath;$('#fibuMonth').textContent=job.month;
-    const active=['queued','running'].includes(job.state),txs=job.transactions||[];
+    const active=['queued','running'].includes(job.state),txs=job.transactions||[],marking=fibuMarkingSummary(txs);
     $('#fibuPlay').disabled=active;
     fibuPatchDom($('#fibuStatus'),`<p><strong>${esc(fibuLabel(job.state))}</strong> · ${esc(job.progress)}</p>${fibuProgress(job)}<p>Letzter Startversuch: ${fibuTime(job.created)} · Letzte erfolgreiche Dokumentprüfung: ${fibuTime(job.lastSuccessfulCheck)}</p>
-      <p>${txs.filter(t=>t.status==='matched').length} zugeordnet · ${txs.filter(t=>t.status==='missing').length} Beleg fehlt · ${txs.filter(t=>t.status==='manual').length} manuell · ${txs.filter(t=>t.status==='not_required').length} kein Beleg notwendig</p>
+      <p><strong>${marking.marked}/${marking.total} Buchungen markiert · ${marking.open} offen</strong> · ${marking.matched} mit Beleg zugeordnet · ${txs.filter(t=>t.status==='not_required').length} kein Beleg notwendig</p>
       ${active?'<button id="fibuCancel">Lauf abbrechen</button>':'<button id="fibuClose">Monat abschließen</button> <button id="fibuReopen">Monat wieder öffnen</button>'}
       ${job.mailSummary?`<p class="fibu-status"><strong>E-Post:</strong> ${job.mailSummary.processed}/${job.mailSummary.messages} Nachrichten geprüft · ${job.mailSummary.marked} mit ASTRA/Erledigt markiert · ${job.mailSummary.failed} mit Ablage-/Verbindungsfehlern. Anhänge: ${job.mailSummary.stored} neu gespeichert, ${job.mailSummary.reused} wiederverwendet.</p>`:''}
       ${fibuSearchScope(job)}

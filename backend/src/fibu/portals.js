@@ -21,9 +21,9 @@ function portals({db,store,vault=require('./portal-vault').portalVault(db),execu
   const finish=(err,value)=>{if(done)return;done=true;clearTimeout(timer);child.kill();err?reject(err):resolve(value);};
   const timer=setTimeout(()=>finish(Object.assign(Error('timeout'),{code:'timeout'})),180000);
   task.sendCode=code=>child.send({type:'code',code});task.cancel=()=>finish(Object.assign(Error('cancelled'),{code:'cancelled'}));
-  child.on('message',m=>{if(m.type==='status')callbacks.status(m.state,m.message);if(m.type==='result')finish(null,{session:m.session,files:m.files.map(f=>({name:f.name,bytes:Buffer.from(f.data,'base64')}))});if(m.type==='error')finish(Object.assign(Error('portal_failed'),{code:m.code}));});child.once('error',()=>finish(Error('browser_unavailable')));child.once('exit',()=>finish(Error('browser_closed')));child.send({type:'start',input});
+  child.on('message',m=>{if(m.type==='status')callbacks.status(m.state,m.message);if(m.type==='result')finish(null,{session:m.session,authenticated:m.authenticated,files:m.files.map(f=>({name:f.name,bytes:Buffer.from(f.data,'base64')}))});if(m.type==='error')finish(Object.assign(Error('portal_failed'),{code:m.code,diagnostics:m.diagnostics}));});child.once('error',()=>finish(Error('browser_unavailable')));child.once('exit',()=>finish(Error('browser_closed')));child.send({type:'start',input});
  });}
- async function run(company,provider,month,c,owner,{job=null}={}){
+ async function run(company,provider,month,c,owner,{job=null,testOnly=false}={}){
   if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))fail('Prüfmonat angeben.',400);
   const definition=definitions.get(company,provider),account=vault.get(company,provider);if(!account?.enabled)fail('Aktiven Portalzugang hinterlegen.',409);
   const k=key(company,provider);if(active.has(k))fail('Dieses Portal wird für diese Firma bereits geprüft.',409);
@@ -31,18 +31,20 @@ function portals({db,store,vault=require('./portal-vault').portalVault(db),execu
   const task={id:require('node:crypto').randomUUID()};active.set(k,task);status(company,provider,'running','Server meldet sich beim Lieferanten an.',{taskId:task.id,month});
   const version=account.version;
   try{
-   const result=await (execute||childExecution)({company,provider,definition,account,month},{status:(state,message)=>status(company,provider,state,message,{taskId:task.id,month,waitingCode:state==='interaction_required'})});
-   const saved=[];for(const f of result.files){const d=require('./sources').validateImport({source:provider,name:f.name,data:f.bytes.toString('base64')},[...definitions.all(company).keys()]);
+   const result=await (execute||childExecution)({company,provider,definition,account,month,testOnly},{status:(state,message)=>status(company,provider,state,message,{taskId:task.id,month,waitingCode:state==='interaction_required'})});
+   if(testOnly&&result.authenticated!==true)throw Object.assign(Error('login_not_verified'),{code:'login_not_verified'});
+   const saved=[];for(const f of (testOnly?[]:result.files)){const d=require('./sources').validateImport({source:provider,name:f.name,data:f.bytes.toString('base64')},[...definitions.all(company).keys()]);
     const folder=c.portalImportFolder||path.join(c.root,String(owner),'imports');await fs.mkdir(folder,{recursive:true,mode:0o700});await inside(c.root,folder,'directory');
     const file=await writeVerified(folder,'Portal_'+provider+'_'+d.hash.slice(0,12)+'.pdf',d.bytes),record={hash:d.hash,path:file,source:provider,originalName:d.name,importedAt:new Date().toISOString(),importedBy:owner,portalMonth:month};store.putImport(owner,company,d.hash,record);saved.push(record);
     if(job)await writeVerified(c.collectionFolder,path.basename(file),d.bytes);
    }
-   vault.put(company,provider,{...account,session:result.session||null,lastCheckedAt:new Date().toISOString()},version);
+   vault.put(company,provider,{...account,session:result.session||null,lastCheckedAt:new Date().toISOString(),...(result.authenticated===true?{lastPortalSuccessAt:new Date().toISOString()}:{}),...(!testOnly&&result.files.length?{lastDownloadAt:new Date().toISOString()}: {})},version);
+   if(testOnly)return status(company,provider,'tested','Portalaufruf und Anmeldung erfolgreich · kein Download.',{taskId:task.id,testOnly:true});
    return status(company,provider,saved.length?'downloaded':'no_documents',saved.length?saved.length+' Rechnung(en) verifiziert heruntergeladen.':'Keine Rechnung für '+month+' gefunden. Rechnungsseite und Auswahlpfade prüfen.',{taskId:task.id,month,count:saved.length,files:saved.map(d=>({name:d.originalName,hash:d.hash}))});
-  }catch(e){return status(company,provider,e.code==='interaction_required'?'interaction_required':e.code==='cancelled'?'cancelled':'failed',e.code==='interaction_required'?'Anmeldung oder zusätzliche Bestätigung beim Lieferanten erforderlich.':e.code==='timeout'?'Zeitlimit erreicht. Erneut versuchen oder Zugang prüfen.':e.code==='cancelled'?'Abruf abgebrochen.':'Abruf fehlgeschlagen. Zugang, Rechnungsseite und Browserinstallation prüfen.',{taskId:task.id,month});}
+  }catch(e){return status(company,provider,e.code==='interaction_required'?'interaction_required':e.code==='cancelled'?'cancelled':'failed',e.code==='interaction_required'?'Anmeldung oder zusätzliche Bestätigung beim Lieferanten erforderlich.':e.code==='login_not_verified'?'Anmeldung nicht nachgewiesen. Portaloberfläche oder Anmeldeprüfung erfordert Klärung.':e.code==='timeout'?'Zeitlimit erreicht. Erneut versuchen oder Zugang prüfen.':e.code==='cancelled'?'Abruf abgebrochen.':'Abruf fehlgeschlagen. Zugang, Rechnungsseite und Browserinstallation prüfen.',{taskId:task.id,month,...(e.diagnostics?{diagnostics:e.diagnostics}:{})});}
   finally{active.delete(k);}
  }
- function start(company,provider,month,c,owner){if(active.size>=2)fail('Zwei Portalabrufe laufen bereits. Kurz warten.',409);if(active.has(key(company,provider)))fail('Portalabruf läuft bereits.',409);const promise=run(company,provider,month,c,owner);promise.catch(()=>{});return promise;}
+ function start(company,provider,month,c,owner,options){if(active.size>=2)fail('Zwei Portalabrufe laufen bereits. Kurz warten.',409);if(active.has(key(company,provider)))fail('Portalabruf läuft bereits.',409);const promise=run(company,provider,month,c,owner,options);promise.catch(()=>{});return promise;}
  function code(company,provider,taskId,value){const task=active.get(key(company,provider)),s=vault.status(company,provider);if(!task||task.id!==taskId||s?.state!=='interaction_required'||!task.sendCode)fail('Keine offene Code-Anfrage. Abruf erneut starten.',409);if(typeof value!=='string'||! /^[a-zA-Z0-9 -]{4,16}$/.test(value))fail('Gültigen Bestätigungscode eingeben.',400);status(company,provider,'running','Bestätigung wird geprüft.',{taskId,month:s.month});task.sendCode(value);}
  async function forJob(job,c,owner,checkpoint){job.portalChecks||=[];for(const provider of vault.ids(job.companyId)){
    const definition=definitions.all(job.companyId).get(provider);if(!definition||definition.removedAt)continue;const a=vault.get(job.companyId,provider);if(!a?.enabled||!a.automatic)continue;

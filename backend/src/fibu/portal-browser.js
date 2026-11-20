@@ -9,7 +9,7 @@ function publicAddress(address){
  return !blocked.check(address,'ipv4');
 }
 function periodText(month){return [month,month.slice(5)+'.'+month.slice(0,4),month.slice(5)+'/'+month.slice(0,4)];}
-async function automate(page,context,account,month,{status=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{}}={}){
+async function automate(page,context,account,month,{status=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{},testOnly=false}={}){
  const s=account.selectors||{},fill=(value)=>value.replaceAll('{{month}}',month.slice(5)).replaceAll('{{year}}',month.slice(0,4)).replaceAll('{{period}}',month);
  const visible=async selector=>selector&&await page.locator(fill(selector)).first().isVisible().catch(()=>false);
  const password=s.password||'input[type=password]',user=s.username||'input[type=email],input[name=username],input[autocomplete=username]';
@@ -22,6 +22,7 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
   await page.getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).first().click({timeout:10000});
   await page.locator(fill(password)).first().waitFor({state:'visible',timeout:15000}).catch(()=>{});
  }
+ if(await cookies.isVisible().catch(()=>false))await cookies.click();
  if(await visible(password)){
   if(await visible(user))await page.locator(fill(user)).first().fill(account.username);
   await page.locator(fill(password)).first().fill(account.password);
@@ -40,7 +41,13 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
  }
  if(await visible(password))throw challenge('Anmeldung nicht abgeschlossen. Zugang oder zusätzliche Prüfung kontrollieren.');
  if(account.invoiceUrl)await page.goto(fill(account.invoiceUrl),{waitUntil:'domcontentloaded',timeout:30000});
- else {const navigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();if(await navigation.isVisible().catch(()=>false)){await navigation.click({timeout:10000});await page.waitForLoadState('domcontentloaded');}}
+ const logout=page.getByRole('button',{name:/Abmelden|Logout|Log out|Sign out/i}).or(page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i})).first();
+ const invoiceNavigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();
+ let authenticated=await logout.isVisible().catch(()=>false)||await invoiceNavigation.isVisible().catch(()=>false);
+ if(!authenticated){const rows=page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice');for(const row of (await rows.all()).slice(0,200)){if(/Rechnung|Invoice/i.test(await row.innerText())&&!/login|register/i.test(new URL(page.url()).pathname)){authenticated=true;break;}}}
+ if(!authenticated)throw Object.assign(Error('login_not_verified'),{code:'login_not_verified'});
+ if(testOnly)return {files:[],session:await context.storageState(),authenticated:true};
+ if(!account.invoiceUrl){const navigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();if(await navigation.isVisible().catch(()=>false)){await navigation.click({timeout:10000});await page.waitForLoadState('domcontentloaded');}}
  status('downloading','Rechnungen für '+month+' werden geprüft.');
  const rows=s.invoiceRows?page.locator(fill(s.invoiceRows)):page.locator('tr, [data-invoice], .invoice');
  const files=[],seen=new Set();let size=0;
@@ -56,23 +63,25 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
   const name=require('node:path').basename(item.suggestedFilename()).replace(/[\x00-\x1f]/g,'').slice(0,200);if(!/\.pdf$/i.test(name))throw Error('not_pdf');
   size+=bytes.length;files.push({name,bytes});await onFile({name,bytes});if(files.length===10)break;
  }
- return {files,session:await context.storageState()};
+ return {files,session:await context.storageState(),authenticated:true};
 }
 async function runBrowser(input,callbacks){
  const {chromium}=require('playwright'),{catalog}=require('./portal-catalog'),dns=require('node:dns/promises');
  const {provider,account,month}=input,definition=input.definition||catalog[provider];allowedUrl(provider,account.loginUrl,definition);if(account.invoiceUrl)allowedUrl(provider,account.invoiceUrl,definition);
- const proxy=await require('./portal-proxy').portalProxy(provider,definition);let browser;const addresses=new Map();
+ const resources=definition.resourceDomains||[],networkDefinition={...definition,domains:[...definition.domains,...resources]};
+ const proxy=await require('./portal-proxy').portalProxy(provider,networkDefinition);let browser,page;const addresses=new Map(),blocked=new Set();
  try{
   browser=await chromium.launch({headless:true,chromiumSandbox:true,proxy:{server:proxy.url}});
   const session=account.session; // Only this supplier's cookies and storage may be reused.
   if(session){session.cookies=(session.cookies||[]).filter(c=>definition.domains.some(d=>c.domain.replace(/^\./,'')===d||!definition.exactHosts&&c.domain.endsWith('.'+d)));session.origins=(session.origins||[]).filter(o=>{try{allowedUrl(provider,o.origin,definition);return true;}catch{return false;}});}
   const context=await browser.newContext({acceptDownloads:true,serviceWorkers:'block',...(session?{storageState:session}:{})});
   await context.route('**/*',async route=>{
-   try{const url=new URL(route.request().url());allowedUrl(provider,url.href,definition);let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{await route.abort();}
+   try{const request=route.request(),url=new URL(request.url());try{allowedUrl(provider,url.href,definition);}catch{if(request.method()!=='GET'||!['script','stylesheet','image','font'].includes(request.resourceType())||!resources.includes(url.hostname))throw Error();allowedUrl(provider,url.href,networkDefinition);}let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{try{blocked.add(new URL(route.request().url()).hostname+':'+route.request().resourceType());}catch{}await route.abort();}
   });
   await context.routeWebSocket('**/*',socket=>socket.close());
-  const page=await context.newPage();page.setDefaultTimeout(12000);
-  return await automate(page,context,account,month,callbacks);
+  page=await context.newPage();page.setDefaultTimeout(12000);
+  return await automate(page,context,account,month,{...callbacks,testOnly:input.testOnly===true});
+ }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}e.diagnostics={route,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
 module.exports={automate,runBrowser,periodText,publicAddress};

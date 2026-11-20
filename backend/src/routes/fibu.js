@@ -33,6 +33,12 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms,por
     const a=portals.list(company).accounts.find(a=>a.id===provider);if(!a?.enabled)fail('Aktiven Portalzugang hinterlegen.',409);
     portals.start(company,provider,req.body.month,c,store.primaryOwner(req.user.id,company));res.status(202).json(portals.status(company,provider));
   });
+  router.post('/portals/:companyId/:provider/test',...write,(req,res)=>{
+    const c=companyFor(config,req.user,req.params.companyId),company=req.params.companyId,provider=req.params.provider;
+    if(config.mode!=='cloud')fail('Portaltest benötigt Serverbetrieb.',409);
+    const a=portals.list(company).accounts.find(a=>a.id===provider);if(!a?.enabled)fail('Aktiven Portalzugang hinterlegen.',409);
+    portals.start(company,provider,new Date().toISOString().slice(0,7),c,store.primaryOwner(req.user.id,company),{testOnly:true});res.status(202).json(portals.status(company,provider));
+  });
   router.post('/portals/:companyId/:provider/code',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);portals.code(req.params.companyId,req.params.provider,req.body.taskId,req.body.code);res.json({accepted:true});});
   router.post('/portals/:companyId/:provider/cancel',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);portals.cancel(req.params.companyId,req.params.provider);res.json({accepted:true});});
   router.post('/setup/immo',...write,async(req,res)=>{if(req.body?.confirmCompanySetup!==true)fail('Freigabe der AC-Immo-Einrichtung erforderlich.',400);const value=setup.prepare(req.body);await fs.mkdir(value.root,{recursive:true,mode:0o700});res.status(201).json(setup.install(value,req.user.id));});
