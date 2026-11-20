@@ -123,3 +123,9 @@ Lokale Prüfung: Vault-, Firmen-/Benutzer-, HTTP-/CSRF-, Import- und vollständi
 Die Monatsübersicht zeigt farbig markierte Buchungen als Hauptkennzahl. Grün, Lila und Gelb zählen gleichwertig; der Balken verwendet markiert / alle Buchungen. Offene Buchungen und tatsächliche Belegzuordnungen stehen getrennt darunter. Beispiel: 35 grüne, 2 lila und 2 gelbe Buchungen ergeben 39/55 markiert, 16 offen und 2 mit Beleg zugeordnet.
 
 „Portal aufruf testen“ prüft ausschließlich Portalzugriff und Anmeldung, ohne Rechnung herunterzuladen. Der Rechnungsabruf bleibt Bestandteil des FiBu-Laufs für fehlende Belege. Ein Zeitpunkt „Erfolgreich zuletzt“ wird nur nach nachgewiesener Anmeldung gespeichert. Das bloße Speichern eines Passworts oder ein historischer Durchlauf ohne heruntergeladene Dokumente zählt nicht als Anmeldebestätigung. Fehlerdiagnosen enthalten nur bereinigte Seitenadressen ohne Queryparameter und blockierte Hostnamen/Ressourcentypen, keine Zugangsdaten oder Cookies.
+
+### Lieferantensperre und Deaktivierung
+
+Erkannte Zugriffssperren (z. B. Cloudflare „Just a moment…“ oder „Access denied“) setzen dauerhaft „Blockiert durch Lieferant“. Historische eindeutige Sperrergebnisse werden einmalig übernommen. Eine normale Einmalcode-Abfrage oder ein vorübergehender technischer Fehler gilt nicht automatisch als Lieferantensperre.
+
+Unter „Status & Aktivierung“ lassen sich Sperrstatus und Hinweis manuell ändern sowie „Lieferant aktiv“ ausschalten. Blockierte und deaktivierte Lieferanten werden vor einem Browserstart übersprungen; der Job protokolliert diesen Grund im Suchbereich. Eine manuell aufgehobene Sperre bleibt auch nach Neustarts aufgehoben, bis eine neue Sperre tatsächlich erkannt wird. Passwortspeichern und allgemeine Verbindungsänderungen heben eine Lieferantensperre nicht versehentlich auf. Der Sperrstatus ist unabhängig von den verschlüsselten Zugangsdaten und je Firma getrennt.

@@ -26,6 +26,7 @@ module.exports=function fibuRoutes({db,allowedOrigins,config=loadConfig(),ms,por
   router.post('/portals/:companyId/:provider/remove',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);if(req.body.confirmRemove!==true)fail('Entfernen bestätigen.',400);res.json(portals.remove(req.params.companyId,req.params.provider,req.body.version,req.user.email));});
   router.post('/portals/:companyId/:provider/restore',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.restore(req.params.companyId,req.params.provider,req.body.version));});
   router.post('/portals/:companyId/:provider',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.save(req.params.companyId,req.params.provider,req.body,req.user.email));});
+  router.post('/portals/:companyId/:provider/control',...write,(req,res)=>{companyFor(config,req.user,req.params.companyId);res.json(portals.control(req.params.companyId,req.params.provider,req.body,req.user.email));});
   router.post('/portals/:companyId/:provider/run',...write,(req,res)=>{
     const c=companyFor(config,req.user,req.params.companyId),company=req.params.companyId,provider=req.params.provider;
     if(config.mode!=='cloud')fail('Portalabruf benötigt Serverbetrieb.',409);
