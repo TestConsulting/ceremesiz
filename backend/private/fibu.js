@@ -49,7 +49,7 @@ async function viewFibu(company,selectedMonth=null,selectedFolder=null,selectedN
     <form id="fibuStart" class="fibu-form"><label>Monatsordner (auf dem Ausführungsrechner)<input name="folder" required placeholder="…\\2026\\10"></label>
     <label>Konkrete Original-Bank-PDF<input name="bank" required placeholder="Vollständiger Dateipfad"></label><p>Prüfmonat: <strong id="fibuMonth">–</strong></p>
     <button class="btn" id="fibuPlay" disabled>▶ Astra FIBU starten</button></form></details><p id="fibuError" role="alert" class="fibu-error"></p>
-    <section class="panel fibu-legend">Grün: konfigurierte Rechnungsgutschrift – kein Beleg notwendig, keine Belegübernahme. Gelb: Beleg erfolgreich abgelegt.
+    <section class="panel fibu-legend">Grün: konfigurierte positive Gutschrift oder Mietertrag – kein Beleg notwendig, keine Belegübernahme. Gelb: Beleg erfolgreich abgelegt.
     Lila: betriebliche Vorgabe „Kein Beleg notwendig“. Ohne Farbe: offen. Ein beendeter Lauf schließt den Monat nicht automatisch ab.</section>
     <section class="panel fibu-status"><label>Prüflauf <select id="fibuJobs"><option>Keine Läufe</option></select></label><div id="fibuStatus"></div></section><div id="fibuResult"></div><dialog id="fibuAssignDialog" class="fibu-dialog"></dialog>`;
   const error=e=>{if(generation===fibuGeneration)$('#fibuError').textContent=e.message;};

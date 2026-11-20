@@ -1,3 +1,9 @@
+## Private Miet- und Darlehensregeln für AC Immo
+
+Mieternamen und bestätigte Mietverwendungszwecke werden ausschließlich als private Regeln in der geschützten FiBu-Datenbank gespeichert. Die JSON-Regeldatei liegt außerhalb des Repositorys. Die Einstellungen können fehlende Regel-IDs aus einer firmenspezifischen Datei ergänzen; vorhandene Regeln und Anpassungen bleiben erhalten. Der Benutzer prüft den Import vor dem Speichern. Serverseitige Validierung und Versionsprüfung gelten unverändert. Die öffentliche Testsuite verwendet nur synthetische Regeln.
+
+Lokale Prüfung der drei September-Auszüge: 55 Buchungen, alle acht Raiffeisen-Mieteingänge und insgesamt 35 Mieteingänge grün; zwei Darlehensabbuchungen lila. Alle Saldenkontrollen und die Prüfung unveränderter Originaldateien erfolgreich. Negative oder nicht passende Eingänge bleiben von der Mietfreigabe ausgeschlossen.
+
 ## Gemeinsame Freigabe AC Immo + Jobübersicht
 
 Die AC-Immo-Erweiterung ist mit der Jobsteuerung auf der Monatsübersicht zusammengeführt. Die Aktivierung erfolgt nach Veröffentlichung unter Einstellungen → FiBu über einen privaten JSON-Import mit ausdrücklicher Freigabe. Der Server übernimmt nur die bestätigte AC-Immo-Wurzel, drei geprüfte Konten und die bestehende Microsoft-Verbindung von TestConsulting; E-Mail bleibt gesperrt. Die serverseitigen Verzeichnisse werden abgeleitet, nicht aus der Datei übernommen. Kontodaten verbleiben in der privaten Datenbank und außerhalb des Git-Repositorys. Anmeldung, CSRF und Same-Origin-Prüfung schützen den Import; erneute Aktivierung überschreibt keine vorhandene Einrichtung. SQLite speichert die Firmenkonfiguration über Jenkins-Neuveröffentlichungen hinweg.
