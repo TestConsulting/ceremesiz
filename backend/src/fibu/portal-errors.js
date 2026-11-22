@@ -2,7 +2,7 @@
 function portalErrorMessage(e){
  if(e.code==='browser_closed')return 'Der Browserprozess auf dem Server wurde vor Abschluss beendet. Die Anmeldung konnte deshalb nicht geprüft werden.';
  if(e.code==='browser_unavailable')return 'Der Server konnte den Prüfprozess nicht starten. Server-Browserinstallation prüfen.';
- if(e.diagnostics?.signals?.includes('credentials_rejected'))return 'Der Lieferant meldet ungültige Anmeldedaten. Benutzername und Passwort im gespeicherten Zugang prüfen.';
+ if(e.diagnostics?.signals?.includes('credentials_rejected')||/Zugangsdaten nicht erkannt/i.test(e.diagnostics?.loginNotice||''))return 'Der Lieferant meldet ungültige Anmeldedaten. Benutzername und Passwort im gespeicherten Zugang prüfen.';
  if(e.diagnostics?.signals?.includes('captcha_rejected'))return 'Die Sicherheitsprüfung des Lieferanten wurde nicht akzeptiert. Eine automatische Anmeldung konnte nicht abgeschlossen werden.';
  if(e.code==='cancelled')return 'Portalprüfung abgebrochen.';
  if(e.code==='timeout')return 'Portalprüfung nach 3 Minuten beendet: Der Lieferant hat nicht rechtzeitig geantwortet. Erneut testen.';
