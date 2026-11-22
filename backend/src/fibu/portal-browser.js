@@ -40,7 +40,9 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  if(huk){
   const consent=page.getByRole('button',{name:'Mit erforderlichen Einstellungen fortfahren',exact:true}).first();
   await consent.waitFor({state:'visible',timeout:5000}).catch(()=>{});
-  if(await consent.isVisible().catch(()=>false)){step('cookie_consent');await consent.click({timeout:10000});await consent.waitFor({state:'hidden',timeout:10000});}
+  // HUK keeps the consent component mounted after acceptance. Its continued
+  // presence must not prevent the subsequent email/password form from running.
+  if(await consent.isVisible().catch(()=>false)){step('cookie_consent');await consent.click({timeout:10000});}
  }else await page.addLocatorHandler(cookies,async()=>{step('cookie_consent');await cookies.click({force:true,timeout:5000}).catch(()=>{});});
  if(strato)await page.addLocatorHandler(page.locator('#cookie_initial_modal'),async()=>{
   step('cookie_consent');await page.locator('#cookie_initial_modal').getByRole('button',{name:'Einstellungen',exact:true}).click();
