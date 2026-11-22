@@ -19,37 +19,38 @@ function resourceRequestAllowed(resources,url,method,type,subframe){
  const staticResource=method==='GET'&&['script','stylesheet','image','font'].includes(type);
  return (resources.includes(url.hostname)||cloudflare)&&(securityResource||staticResource);
 }
-async function automate(page,context,account,month,{status=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{},testOnly=false}={}){
+async function automate(page,context,account,month,{status=()=>{},step=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{},testOnly=false}={}){
  const s=account.selectors||{},fill=(value)=>value.replaceAll('{{month}}',month.slice(5)).replaceAll('{{year}}',month.slice(0,4)).replaceAll('{{period}}',month);
  const visible=async selector=>selector&&await page.locator(fill(selector)).first().isVisible().catch(()=>false);
  const password=s.password||'input[type=password]:visible',user=s.username||'input[type=email]:visible,input[name=username]:visible,input[autocomplete=username]:visible';
- await page.goto(account.loginUrl,{waitUntil:'domcontentloaded',timeout:30000});
+ step('login_page');await page.goto(account.loginUrl,{waitUntil:'domcontentloaded',timeout:30000});
  const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Only necessary cookies)$/i}).first();
- if(await cookies.isVisible().catch(()=>false))await cookies.click();
+ if(await cookies.isVisible().catch(()=>false)){step('cookie_consent');await cookies.click();}
  await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:30000}),page.locator(fill(user)).first().waitFor({state:'visible',timeout:30000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:30000})]).catch(()=>{});
  if(!await visible(password)&&await visible(user)){
-  await page.locator(fill(user)).first().fill(account.username);
-  await page.getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).first().click({timeout:10000});
+  {step('username');await page.locator(fill(user)).first().fill(account.username);}
+  step('login_next');await page.getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).first().click({timeout:10000});
   await page.locator(fill(password)).first().waitFor({state:'visible',timeout:15000}).catch(()=>{});
  }
- if(await cookies.isVisible().catch(()=>false))await cookies.click();
+ if(await cookies.isVisible().catch(()=>false)){step('cookie_consent');await cookies.click();}
  if(await visible(password)){
-  if(await visible(user))await page.locator(fill(user)).first().fill(account.username);
-  await page.locator(fill(password)).first().fill(account.password);
+  if(await visible(user)){step('username');await page.locator(fill(user)).first().fill(account.username);}
+  step('password');await page.locator(fill(password)).first().fill(account.password);
   const submit=s.submit?page.locator(fill(s.submit)).first():page.getByRole('button',{name:/^(Einloggen|Anmelden|Login|Log in|Sign in)$/i}).first();
-  await submit.click({timeout:10000});
+  step('login_submit');await submit.click({timeout:10000});
   await page.waitForLoadState('domcontentloaded');
  }
  const otp=s.otp||'input[autocomplete=one-time-code]';
  // Wait for either the invoice surface or an authentication challenge after async login.
  await Promise.race([page.waitForURL(url=>!/login|register/i.test(url.pathname),{timeout:8000}),page.locator(fill(otp)).first().waitFor({state:'visible',timeout:8000})]).catch(()=>{});
- if(await visible(otp)){
+ if(await visible(otp)){step('confirmation');
   status('interaction_required','Bestätigungscode vom Lieferanten erforderlich.');
   const value=await code();await page.locator(fill(otp)).first().fill(value);
   const submit=s.otpSubmit?page.locator(fill(s.otpSubmit)).first():page.getByRole('button',{name:/^(Bestätigen|Weiter|Verify|Continue|Anmelden)$/i}).first();
   await submit.click({timeout:10000});await page.waitForLoadState('domcontentloaded');
  }
- if(account.invoiceUrl)await page.goto(fill(account.invoiceUrl),{waitUntil:'domcontentloaded',timeout:30000});
+ if(account.invoiceUrl){step('invoice_page');await page.goto(fill(account.invoiceUrl),{waitUntil:'domcontentloaded',timeout:30000});}
+ step('verify_login');
  const logout=page.getByRole('button',{name:/Abmelden|Logout|Log out|Sign out/i}).or(page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i})).first();
  const invoiceNavigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();
  // A redirect can finish before an asynchronously rendered dashboard is ready.
@@ -59,8 +60,8 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
  if(!authenticated){const rows=page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice');for(const row of (await rows.all()).slice(0,200)){if(/Rechnung|Invoice/i.test(await row.innerText())&&!/login|register/i.test(new URL(page.url()).pathname)){authenticated=true;break;}}}
  if(!authenticated){if(await visible(password))throw challenge('Anmeldung nicht abgeschlossen. Zugang oder zusätzliche Prüfung kontrollieren.');throw Object.assign(Error('login_not_verified'),{code:'login_not_verified'});}
  if(testOnly)return {files:[],session:await context.storageState(),authenticated:true};
- if(!account.invoiceUrl){const navigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();if(await navigation.isVisible().catch(()=>false)){await navigation.click({timeout:10000});await page.waitForLoadState('domcontentloaded');}}
- status('downloading','Rechnungen für '+month+' werden geprüft.');
+ step('invoice_page');if(!account.invoiceUrl){const navigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();if(await navigation.isVisible().catch(()=>false)){await navigation.click({timeout:10000});await page.waitForLoadState('domcontentloaded');}}
+ step('download');status('downloading','Rechnungen für '+month+' werden geprüft.');
  const rows=s.invoiceRows?page.locator(fill(s.invoiceRows)):page.locator('tr, [data-invoice], .invoice');
  const files=[],seen=new Set();let size=0;
  for(const row of (await rows.all()).slice(0,200)){
@@ -81,7 +82,7 @@ async function runBrowser(input,callbacks){
  const {chromium}=require('playwright'),{catalog}=require('./portal-catalog'),dns=require('node:dns/promises');
  const {provider,account,month}=input,definition=input.definition||catalog[provider];allowedUrl(provider,account.loginUrl,definition);if(account.invoiceUrl)allowedUrl(provider,account.invoiceUrl,definition);
  const resources=definition.resourceDomains||[],networkDefinition={...definition,domains:[...definition.domains,...resources]};
- const proxy=await require('./portal-proxy').portalProxy(provider,networkDefinition);let browser,page;const addresses=new Map(),blocked=new Set();
+ const proxy=await require('./portal-proxy').portalProxy(provider,networkDefinition);let browser,page,currentStep='browser_start';const addresses=new Map(),blocked=new Set();
  try{
   browser=await chromium.launch({headless:true,chromiumSandbox:true,proxy:{server:proxy.url}});
   const session=account.session; // Only this supplier's cookies and storage may be reused.
@@ -92,8 +93,8 @@ async function runBrowser(input,callbacks){
   });
   await context.routeWebSocket('**/*',socket=>socket.close());
   page=await context.newPage();page.setDefaultTimeout(12000);
-  return await automate(page,context,account,month,{...callbacks,testOnly:input.testOnly===true});
- }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
+  return await automate(page,context,account,month,{...callbacks,step:value=>{currentStep=value;},testOnly:input.testOnly===true});
+ }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={step:currentStep,route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
 module.exports={automate,runBrowser,periodText,publicAddress,resourceRequestAllowed};
