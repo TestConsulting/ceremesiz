@@ -9,6 +9,16 @@ function publicAddress(address){
  return !blocked.check(address,'ipv4');
 }
 function periodText(month){return [month,month.slice(5)+'.'+month.slice(0,4),month.slice(5)+'/'+month.slice(0,4)];}
+function resourceRequestAllowed(resources,url,method,type,subframe){
+ const cloudflare=resources.includes('challenges.cloudflare.com')&&(url.hostname==='challenges.cloudflare.com'||url.hostname.endsWith('.challenges.cloudflare.com'));
+ const google=['www.google.com','www.gstatic.com'].includes(url.hostname);
+ const recaptcha=google&&resources.includes(url.hostname)&&url.pathname.startsWith('/recaptcha/');
+ if(google&&!recaptcha)return false;
+ const security=cloudflare||recaptcha;
+ const securityResource=security&&(['GET','POST'].includes(method)&&['xhr','fetch','ping','other'].includes(type)||method==='GET'&&type==='document'&&subframe);
+ const staticResource=method==='GET'&&['script','stylesheet','image','font'].includes(type);
+ return (resources.includes(url.hostname)||cloudflare)&&(securityResource||staticResource);
+}
 async function automate(page,context,account,month,{status=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{},testOnly=false}={}){
  const s=account.selectors||{},fill=(value)=>value.replaceAll('{{month}}',month.slice(5)).replaceAll('{{year}}',month.slice(0,4)).replaceAll('{{period}}',month);
  const visible=async selector=>selector&&await page.locator(fill(selector)).first().isVisible().catch(()=>false);
@@ -78,7 +88,7 @@ async function runBrowser(input,callbacks){
   if(session){session.cookies=(session.cookies||[]).filter(c=>definition.domains.some(d=>c.domain.replace(/^\./,'')===d||!definition.exactHosts&&c.domain.endsWith('.'+d)));session.origins=(session.origins||[]).filter(o=>{try{allowedUrl(provider,o.origin,definition);return true;}catch{return false;}});}
   const context=await browser.newContext({acceptDownloads:true,serviceWorkers:'block',...(session?{storageState:session}:{})});
   await context.route('**/*',async route=>{
-   try{const request=route.request(),url=new URL(request.url());try{allowedUrl(provider,url.href,definition);}catch{const securityHost=resources.includes('challenges.cloudflare.com')&&(url.hostname==='challenges.cloudflare.com'||url.hostname.endsWith('.challenges.cloudflare.com'));const securityResource=securityHost&&(['GET','POST'].includes(request.method())&&['xhr','fetch','ping','other'].includes(request.resourceType())||request.method()==='GET'&&request.resourceType()==='document'&&request.frame()!==page.mainFrame());const staticResource=request.method()==='GET'&&['script','stylesheet','image','font'].includes(request.resourceType());if(!(resources.includes(url.hostname)||securityHost)||!securityResource&&!staticResource)throw Error();allowedUrl(provider,url.href,networkDefinition);}let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{try{blocked.add(new URL(route.request().url()).hostname+':'+route.request().resourceType());}catch{}await route.abort();}
+   try{const request=route.request(),url=new URL(request.url());try{allowedUrl(provider,url.href,definition);}catch{if(!resourceRequestAllowed(resources,url,request.method(),request.resourceType(),request.resourceType()==='document'&&request.frame()!==page.mainFrame()))throw Error();allowedUrl(provider,url.href,networkDefinition);}let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{try{blocked.add(new URL(route.request().url()).hostname+':'+route.request().resourceType());}catch{}await route.abort();}
   });
   await context.routeWebSocket('**/*',socket=>socket.close());
   page=await context.newPage();page.setDefaultTimeout(12000);
@@ -86,4 +96,4 @@ async function runBrowser(input,callbacks){
  }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
-module.exports={automate,runBrowser,periodText,publicAddress};
+module.exports={automate,runBrowser,periodText,publicAddress,resourceRequestAllowed};

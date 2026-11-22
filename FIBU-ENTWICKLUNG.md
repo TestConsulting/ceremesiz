@@ -126,6 +126,8 @@ Die Monatsübersicht zeigt farbig markierte Buchungen als Hauptkennzahl. Grün, 
 
 ### Lieferantensperre und Deaktivierung
 
+Urban Sports darf für den regulären Login Google-reCAPTCHA-Ressourcen ausschließlich unter `/recaptcha/` auf `www.google.com` und `www.gstatic.com` sowie statische Cookie-Ressourcen von `cdn.cookielaw.org` laden. Google ist kein zulässiges Login-/Rechnungsziel; reCAPTCHA-Dokumente sind nur als Unterframe erlaubt. DNS-/IP-Prüfung und Proxy bleiben aktiv. Eine interaktive CAPTCHA-Prüfung wird dadurch nicht automatisch gelöst.
+
 Die Anmeldeprüfung wartet nach einer Weiterleitung bis zu 15 Sekunden auf sichtbare Konto-Nachweise (Abmelden, Rechnungsnavigation oder Rechnungszeilen). Ein Dashboard-Titel oder eine geänderte URL genügt nicht. Dadurch werden verzögert gerenderte Portale wie STAWAG nicht vorzeitig als fehlgeschlagen bewertet. Die generische Felderkennung überspringt versteckte Login-Felder; der Cookie-Dialog unterstützt auch „Ablehnen“. Ein synthetischer Browser-Test prüft verzögerten Erfolg und die Ablehnung einer nicht verifizierten Dashboard-Seite.
 
 Erkannte Zugriffssperren (z. B. Cloudflare „Just a moment…“ oder „Access denied“) setzen dauerhaft „Blockiert durch Lieferant“. Historische eindeutige Sperrergebnisse werden einmalig übernommen. Eine normale Einmalcode-Abfrage oder ein vorübergehender technischer Fehler gilt nicht automatisch als Lieferantensperre.

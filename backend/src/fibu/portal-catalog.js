@@ -1,7 +1,7 @@
 const {fail}=require('./core');
 const catalog={
  lebara:{name:'Lebara',url:'https://www.lebara.de/de/mylebara.html',domains:['lebara.de'],resourceDomains:['lebara-new.app.baqend.com','cdn.cookielaw.org','challenges.cloudflare.com']},
- urban_sports_club:{name:'Urban Sports Club',url:'https://portal.urbansportsclub.com/login',domains:['urbansportsclub.com']},
+ urban_sports_club:{name:'Urban Sports Club',url:'https://portal.urbansportsclub.com/login',domains:['urbansportsclub.com'],resourceDomains:['www.google.com','www.gstatic.com','cdn.cookielaw.org']},
  strato:{name:'STRATO',url:'https://www.strato.de/apps/CustomerService',domains:['strato.de']},
  fuelscard:{name:'B2Mobility / FuelsCard',url:'https://www.fuelscard.de/',domains:['fuelscard.de']},
  microsoft:{name:'Microsoft',url:'https://admin.cloud.microsoft/',domains:['microsoft.com','microsoftonline.com','live.com','msauth.net','msftauth.net']},
