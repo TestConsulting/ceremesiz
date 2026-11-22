@@ -31,7 +31,7 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Reject All|Only necessary cookies|Mit erforderlichen Einstellungen fortfahren)$/i}).filter({visible:true}).first();
  // Consent overlays may appear after the form, while a click is already waiting.
  // Locator handlers dismiss them at action time instead of checking only on load.
- await page.addLocatorHandler(cookies,async()=>{step('cookie_consent');await cookies.click();});
+ await page.addLocatorHandler(cookies,async()=>{step('cookie_consent');await cookies.click({force:true,timeout:5000}).catch(()=>{});});
  if(strato)await page.addLocatorHandler(page.locator('#cookie_initial_modal'),async()=>{
   step('cookie_consent');await page.locator('#cookie_initial_modal').getByRole('button',{name:'Einstellungen',exact:true}).click();
   await page.getByRole('button',{name:'Auswahl bestätigen',exact:true}).filter({visible:true}).click();
@@ -50,6 +50,14 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  if(await visible(password)){
   if(await visible(user)){step('username');await page.locator(fill(user)).first().fill(account.username);}
   step('password');await page.locator(fill(password)).first().fill(account.password);
+  if(strato){
+   // STRATO's form may be rebuilt after consent. Enter into the final form,
+   // emitting normal keyboard/change events and verify both fields before submit.
+   const usernameField=page.locator(s.username||'#ksbLogin #username').filter({visible:true}).first(),passwordField=page.locator(s.password||'#ksbLogin #jss_ksb_password').filter({visible:true}).first();
+   await usernameField.fill('');await usernameField.pressSequentially(account.username);await usernameField.press('Tab');
+   await passwordField.fill('');await passwordField.pressSequentially(account.password);await passwordField.press('Tab');
+   if(await usernameField.inputValue()!==account.username||await passwordField.inputValue()!==account.password)throw Object.assign(Error('field_values_changed'),{code:'fields_changed'});
+  }
   const submit=s.submit?page.locator(fill(s.submit)).filter({visible:true}).first():page.getByRole('button',{name:/^(Einloggen|Anmelden|Login|Log in|Sign in)$/i}).filter({visible:true}).first();
   step('login_submit');await submit.click({timeout:10000});
   await page.waitForLoadState('domcontentloaded');
