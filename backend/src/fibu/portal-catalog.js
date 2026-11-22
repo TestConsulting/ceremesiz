@@ -7,7 +7,7 @@ const catalog={
  microsoft:{name:'Microsoft',url:'https://admin.cloud.microsoft/',domains:['microsoft.com','microsoftonline.com','live.com','msauth.net','msftauth.net']},
  amazon:{name:'Amazon',url:'https://www.amazon.de/',domains:['amazon.de']},
  huk:{name:'HUK-COBURG',url:'https://www.huk.de/meine-huk/',domains:['huk.de']},
- sachbezug:{name:'Sachbezugskarte',url:'https://www.sachbezugskarte.eu/',domains:['sachbezugskarte.eu']}
+ sachbezug:{name:'Sachbezugskarte',url:'https://www.sachbezugskarte.eu/',domains:['sachbezugskarte.eu','login.petafuel.net'],resourceDomains:['productsapi.petafuel.net']}
 };
 function allowedUrl(provider,value,definition=catalog[provider]){const p=definition;try{const u=new URL(value);if(!p||u.protocol!=='https:'||u.username||u.password||u.port||!p.domains.some(d=>u.hostname===d||p.exactHosts!==true&&u.hostname.endsWith('.'+d)))throw Error();return u.href;}catch{fail('Nur freigegebene HTTPS-Adressen dieses Lieferanten verwenden.',400);}}
 function validateAccount(provider,b,old,definition=catalog[provider]){

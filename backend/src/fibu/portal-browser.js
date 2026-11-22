@@ -17,26 +17,38 @@ function resourceRequestAllowed(resources,url,method,type,subframe){
  const security=cloudflare||recaptcha;
  const securityResource=security&&(['GET','POST'].includes(method)&&['xhr','fetch','ping','other'].includes(type)||method==='GET'&&type==='document'&&subframe);
  const staticResource=method==='GET'&&['script','stylesheet','image','font'].includes(type);
- return (resources.includes(url.hostname)||cloudflare)&&(securityResource||staticResource);
+ const cardApi=resources.includes('productsapi.petafuel.net')&&url.hostname==='productsapi.petafuel.net'&&['GET','POST','OPTIONS'].includes(method)&&['xhr','fetch'].includes(type);
+ const cookieData=resources.includes('cdn.cookielaw.org')&&url.hostname==='cdn.cookielaw.org'&&method==='GET'&&['xhr','fetch'].includes(type);
+ return (resources.includes(url.hostname)||cloudflare)&&(securityResource||staticResource||cardApi||cookieData);
 }
 async function automate(page,context,account,month,{status=()=>{},step=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{},testOnly=false}={}){
  const s=account.selectors||{},fill=(value)=>value.replaceAll('{{month}}',month.slice(5)).replaceAll('{{year}}',month.slice(0,4)).replaceAll('{{period}}',month);
  const visible=async selector=>selector&&await page.locator(fill(selector)).first().isVisible().catch(()=>false);
- const password=s.password||'input[type=password]:visible',user=s.username||'input[type=email]:visible,input[name=username]:visible,input[autocomplete=username]:visible';
- step('login_page');await page.goto(account.loginUrl,{waitUntil:'domcontentloaded',timeout:30000});
- const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Only necessary cookies)$/i}).first();
+ const password=s.password||'input[type=password]:visible',user=s.username||(new URL(account.loginUrl).hostname==='www.sachbezugskarte.eu'?'input[type=text]:visible':'input[type=email]:visible,input[name=username]:visible,input[autocomplete=username]:visible');
+ const host=new URL(account.loginUrl).hostname,stawag=host==='www.stawag.de',strato=host==='www.strato.de',huk=host==='www.huk.de',card=host==='www.sachbezugskarte.eu';
+ const entry=account.session&&stawag?new URL('/portal/home',account.loginUrl).href:account.loginUrl;
+ step('login_page');await page.goto(entry,{waitUntil:'domcontentloaded',timeout:30000});
+ const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Reject All|Only necessary cookies|Mit erforderlichen Einstellungen fortfahren)$/i}).filter({visible:true}).first();
+ if(strato&&await page.locator('#cookie_initial_modal').isVisible().catch(()=>false)){
+  step('cookie_consent');await page.locator('#cookie_initial_modal').getByRole('button',{name:'Einstellungen',exact:true}).click();
+  await page.getByRole('button',{name:'Auswahl bestätigen',exact:true}).filter({visible:true}).click();
+ }
+ if(card&&!await visible(password)){
+  const start=page.getByRole('button',{name:'Login',exact:true}).filter({visible:true}).first();
+  if(await start.isVisible().catch(()=>false)){step('login_next');await start.click();}
+ }
  if(await cookies.isVisible().catch(()=>false)){step('cookie_consent');await cookies.click();}
- await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:30000}),page.locator(fill(user)).first().waitFor({state:'visible',timeout:30000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:30000})]).catch(()=>{});
+ await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:30000}),page.locator(fill(user)).first().waitFor({state:'visible',timeout:30000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:30000}),page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i}).filter({visible:true}).first().waitFor({state:'visible',timeout:30000})]).catch(()=>{});
  if(!await visible(password)&&await visible(user)){
   {step('username');await page.locator(fill(user)).first().fill(account.username);}
-  step('login_next');await page.getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).first().click({timeout:10000});
+  step('login_next');await (huk?page.locator('main'):page).getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).filter({visible:true}).first().click({timeout:10000});
   await page.locator(fill(password)).first().waitFor({state:'visible',timeout:15000}).catch(()=>{});
  }
  if(await cookies.isVisible().catch(()=>false)){step('cookie_consent');await cookies.click();}
  if(await visible(password)){
   if(await visible(user)){step('username');await page.locator(fill(user)).first().fill(account.username);}
   step('password');await page.locator(fill(password)).first().fill(account.password);
-  const submit=s.submit?page.locator(fill(s.submit)).first():page.getByRole('button',{name:/^(Einloggen|Anmelden|Login|Log in|Sign in)$/i}).first();
+  const submit=s.submit?page.locator(fill(s.submit)).filter({visible:true}).first():page.getByRole('button',{name:/^(Einloggen|Anmelden|Login|Log in|Sign in)$/i}).filter({visible:true}).first();
   step('login_submit');await submit.click({timeout:10000});
   await page.waitForLoadState('domcontentloaded');
  }
@@ -51,7 +63,7 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  }
  if(account.invoiceUrl){step('invoice_page');await page.goto(fill(account.invoiceUrl),{waitUntil:'domcontentloaded',timeout:30000});}
  step('verify_login');
- const logout=page.getByRole('button',{name:/Abmelden|Logout|Log out|Sign out/i}).or(page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i})).first();
+ const logout=page.getByRole('button',{name:/Abmelden|Logout|Log out|Sign out/i}).or(page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i})).filter({visible:true}).first();
  const invoiceNavigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();
  // A redirect can finish before an asynchronously rendered dashboard is ready.
  // Require positive account evidence; a changed URL alone never proves login.

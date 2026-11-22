@@ -1,6 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto'),Database=require('better-sqlite3'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {portalVault}=require('../src/fibu/portal-vault'),{validateAccount,allowedUrl}=require('../src/fibu/portal-catalog'),{portals}=require('../src/fibu/portals');
 const body={username:'fixture@example.invalid',password:'synthetic-password',enabled:true,automatic:true,version:0};
+test('STAWAG session probe opens the account instead of the login/logout route',async t=>{
+ const {chromium}=require('playwright');let browser;try{browser=await chromium.launch({headless:true,chromiumSandbox:true});}catch(e){if(process.env.ASTRA_REQUIRE_BROWSER_TEST==='1')throw e;t.skip('Chromium unavailable locally; mandatory in Jenkins');return;}
+ try{const context=await browser.newContext(),page=await context.newPage(),visited=[];await page.route('https://www.stawag.de/**',route=>{visited.push(new URL(route.request().url()).pathname);return route.fulfill({contentType:'text/html',body:'<a href="/portal/logout-modal">Abmelden</a>'});});const {automate}=require('../src/fibu/portal-browser'),result=await automate(page,context,{...body,session:{cookies:[],origins:[]},loginUrl:'https://www.stawag.de/portal/login',selectors:{}},'2026-11',{testOnly:true});assert.equal(result.authenticated,true);assert.deepEqual(visited,['/portal/home']);assert.deepEqual(result.files,[]);}finally{await browser.close();}
+});
 test('Portal login waits for delayed account evidence and rejects an unverified dashboard',async t=>{
  const {chromium}=require('playwright');let browser;try{browser=await chromium.launch({headless:true,chromiumSandbox:true});}catch(e){if(process.env.ASTRA_REQUIRE_BROWSER_TEST==='1')throw e;t.skip('Chromium unavailable locally; mandatory in Jenkins');return;}
  const http=require('node:http'),{automate}=require('../src/fibu/portal-browser');
