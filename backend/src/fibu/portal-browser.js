@@ -29,22 +29,24 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  const entry=account.session&&stawag?new URL('/portal/home',account.loginUrl).href:account.loginUrl;
  step('login_page');await page.goto(entry,{waitUntil:'domcontentloaded',timeout:30000});
  const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Reject All|Only necessary cookies|Mit erforderlichen Einstellungen fortfahren)$/i}).filter({visible:true}).first();
- if(strato&&await page.locator('#cookie_initial_modal').isVisible().catch(()=>false)){
+ // Consent overlays may appear after the form, while a click is already waiting.
+ // Locator handlers dismiss them at action time instead of checking only on load.
+ await page.addLocatorHandler(cookies,async()=>{step('cookie_consent');await cookies.click();});
+ if(strato)await page.addLocatorHandler(page.locator('#cookie_initial_modal'),async()=>{
   step('cookie_consent');await page.locator('#cookie_initial_modal').getByRole('button',{name:'Einstellungen',exact:true}).click();
   await page.getByRole('button',{name:'Auswahl bestätigen',exact:true}).filter({visible:true}).click();
- }
- if(card&&!await visible(password)){
+ });
+ if(card){
   const start=page.getByRole('button',{name:'Login',exact:true}).filter({visible:true}).first();
-  if(await start.isVisible().catch(()=>false)){step('login_next');await start.click();}
+  await Promise.any([page.locator(password).first().waitFor({state:'visible',timeout:15000}),start.waitFor({state:'visible',timeout:15000})]).catch(()=>{});
+  if(!await visible(password)&&await start.isVisible().catch(()=>false)){step('login_next');await start.click();}
  }
- if(await cookies.isVisible().catch(()=>false)){step('cookie_consent');await cookies.click();}
  await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:30000}),page.locator(fill(user)).first().waitFor({state:'visible',timeout:30000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:30000}),page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i}).filter({visible:true}).first().waitFor({state:'visible',timeout:30000})]).catch(()=>{});
  if(!await visible(password)&&await visible(user)){
   {step('username');await page.locator(fill(user)).first().fill(account.username);}
   step('login_next');await (huk?page.locator('main'):page).getByRole('button',{name:/^(Weiter|Next|Continue|Fortfahren)$/i}).filter({visible:true}).first().click({timeout:10000});
   await page.locator(fill(password)).first().waitFor({state:'visible',timeout:15000}).catch(()=>{});
  }
- if(await cookies.isVisible().catch(()=>false)){step('cookie_consent');await cookies.click();}
  if(await visible(password)){
   if(await visible(user)){step('username');await page.locator(fill(user)).first().fill(account.username);}
   step('password');await page.locator(fill(password)).first().fill(account.password);
@@ -106,7 +108,7 @@ async function runBrowser(input,callbacks){
   await context.routeWebSocket('**/*',socket=>socket.close());
   page=await context.newPage();page.setDefaultTimeout(12000);
   return await automate(page,context,account,month,{...callbacks,step:value=>{currentStep=value;},testOnly:input.testOnly===true});
- }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={step:currentStep,route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
+ }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={step:currentStep,failureKind:/intercepts pointer events|subtree intercepts/i.test(e.message||'')?'overlay':/not enabled|element is disabled/i.test(e.message||'')?'disabled':/waiting for.*locator|waiting for getByRole/i.test(e.message||'')?'element_unavailable':'unclassified',route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
 module.exports={automate,runBrowser,periodText,publicAddress,resourceRequestAllowed};

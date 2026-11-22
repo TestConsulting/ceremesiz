@@ -1,6 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict'),Database=require('better-sqlite3'),crypto=require('node:crypto'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {portals}=require('../src/fibu/portals'),{portalVault}=require('../src/fibu/portal-vault'),{allowedUrl}=require('../src/fibu/portal-catalog');
 const setup={name:'Beispiel Netz',url:'https://kunden.beispiel.de/login',keywords:'Beispiel Netz; Netzabrechnung',domains:'login.beispiel.de'};
+test('Card provider allows its observed authentication and API hosts but no unrelated hosts or API documents',()=>{
+ const {catalog}=require('../src/fibu/portal-catalog'),{resourceRequestAllowed:allowed}=require('../src/fibu/portal-browser'),d=catalog.sachbezug;
+ assert.equal(allowedUrl('sachbezug','https://login.petafuel.net/',d),'https://login.petafuel.net/');
+ assert.throws(()=>allowedUrl('sachbezug','https://unrelated.petafuel.net/',d));
+ assert.equal(allowed(d.resourceDomains,new URL('https://productsapi.petafuel.net/config'),'GET','fetch',false),true);
+ assert.equal(allowed(d.resourceDomains,new URL('https://productscdn.petafuel.net/style.css'),'GET','stylesheet',false),true);
+ assert.equal(allowed(d.resourceDomains,new URL('https://productsapi.petafuel.net/config'),'GET','document',false),false);
+ assert.equal(allowed([],new URL('https://productsapi.petafuel.net/config'),'GET','fetch',false),false);
+});
 test('Urban Sports permits reCAPTCHA resources without allowing Google navigation or unrelated requests',()=>{
  const {catalog}=require('../src/fibu/portal-catalog'),{resourceRequestAllowed:allowed}=require('../src/fibu/portal-browser'),resources=catalog.urban_sports_club.resourceDomains;
  const check=(url,method='GET',type='script',subframe=false)=>allowed(resources,new URL(url),method,type,subframe);
