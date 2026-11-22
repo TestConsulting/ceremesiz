@@ -9,6 +9,12 @@ function publicAddress(address){
  return !blocked.check(address,'ipv4');
 }
 function periodText(month){return [month,month.slice(5)+'.'+month.slice(0,4),month.slice(5)+'/'+month.slice(0,4)];}
+function authFailureReason(value){
+ const text=String(JSON.stringify(value)||'').slice(0,10000);
+ if(/(?:captcha|security verification).{0,60}(?:invalid|failed|incorrect|required)|(?:invalid|failed|incorrect).{0,60}captcha/i.test(text))return 'captcha_rejected';
+ if(/invalid credentials|bad credentials|incorrect password|invalid password|invalid username|invalid email|wrong (?:email|password)|username or password.{0,30}incorrect/i.test(text))return 'credentials_rejected';
+ return 'unclassified';
+}
 function resourceRequestAllowed(resources,url,method,type,subframe){
  const cloudflare=resources.includes('challenges.cloudflare.com')&&(url.hostname==='challenges.cloudflare.com'||url.hostname.endsWith('.challenges.cloudflare.com'));
  const google=['www.google.com','www.gstatic.com'].includes(url.hostname);
@@ -17,7 +23,7 @@ function resourceRequestAllowed(resources,url,method,type,subframe){
  const security=cloudflare||recaptcha;
  const securityResource=security&&(['GET','POST'].includes(method)&&['xhr','fetch','ping','other'].includes(type)||method==='GET'&&type==='document'&&subframe);
  const staticResource=method==='GET'&&['script','stylesheet','image','font'].includes(type);
- const cardApi=resources.includes('productsapi.petafuel.net')&&url.hostname==='productsapi.petafuel.net'&&['GET','POST','OPTIONS'].includes(method)&&['xhr','fetch'].includes(type);
+ const cardApi=['productsapi.petafuel.net','loginapi.petafuel.net'].includes(url.hostname)&&resources.includes(url.hostname)&&['GET','POST','OPTIONS'].includes(method)&&['xhr','fetch'].includes(type);
  const cookieData=resources.includes('cdn.cookielaw.org')&&url.hostname==='cdn.cookielaw.org'&&method==='GET'&&['xhr','fetch'].includes(type);
  return (resources.includes(url.hostname)||cloudflare)&&(securityResource||staticResource||cardApi||cookieData);
 }
@@ -31,7 +37,11 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Reject All|Only necessary cookies|Mit erforderlichen Einstellungen fortfahren)$/i}).filter({visible:true}).first();
  // Consent overlays may appear after the form, while a click is already waiting.
  // Locator handlers dismiss them at action time instead of checking only on load.
- await page.addLocatorHandler(cookies,async()=>{step('cookie_consent');await cookies.click({force:true,timeout:5000}).catch(()=>{});});
+ if(huk){
+  const consent=page.getByRole('button',{name:'Mit erforderlichen Einstellungen fortfahren',exact:true}).first();
+  await consent.waitFor({state:'visible',timeout:5000}).catch(()=>{});
+  if(await consent.isVisible().catch(()=>false)){step('cookie_consent');await consent.click({timeout:10000});await consent.waitFor({state:'hidden',timeout:10000});}
+ }else await page.addLocatorHandler(cookies,async()=>{step('cookie_consent');await cookies.click({force:true,timeout:5000}).catch(()=>{});});
  if(strato)await page.addLocatorHandler(page.locator('#cookie_initial_modal'),async()=>{
   step('cookie_consent');await page.locator('#cookie_initial_modal').getByRole('button',{name:'Einstellungen',exact:true}).click();
   await page.getByRole('button',{name:'Auswahl bestätigen',exact:true}).filter({visible:true}).click();
@@ -116,9 +126,9 @@ async function runBrowser(input,callbacks){
    try{const request=route.request(),url=new URL(request.url());try{allowedUrl(provider,url.href,definition);}catch{if(!resourceRequestAllowed(resources,url,request.method(),request.resourceType(),request.resourceType()==='document'&&request.frame()!==page.mainFrame()))throw Error();allowedUrl(provider,url.href,networkDefinition);}let ips=addresses.get(url.hostname);if(!ips){ips=await dns.lookup(url.hostname,{all:true});addresses.set(url.hostname,ips);}if(!ips.length||ips.some(({address})=>!publicAddress(address)))throw Error();await route.continue();}catch{try{blocked.add(new URL(route.request().url()).hostname+':'+route.request().resourceType());}catch{}await route.abort().catch(()=>{});}
   });
   await context.routeWebSocket('**/*',socket=>socket.close());
-  page=await context.newPage();page.setDefaultTimeout(12000);page.on('response',response=>{try{const u=new URL(response.url());if(response.status()>=400&&httpFailures.length<12&&definition.domains.some(d=>u.hostname===d||u.hostname.endsWith('.'+d)))httpFailures.push({path:u.origin+u.pathname,status:response.status(),method:response.request().method()});}catch{}});
+  page=await context.newPage();page.setDefaultTimeout(12000);page.on('response',response=>{try{const u=new URL(response.url());if(response.status()>=400&&httpFailures.length<12&&definition.domains.some(d=>u.hostname===d||u.hostname.endsWith('.'+d))){const failure={path:u.origin+u.pathname,status:response.status(),method:response.request().method()};httpFailures.push(failure);if(failure.method==='POST'&&/auth|login|token/i.test(u.pathname))response.json().then(value=>{failure.reason=authFailureReason(value);}).catch(()=>{});}}catch{}});
   return await automate(page,context,account,month,{...callbacks,step:value=>{currentStep=value;},testOnly:input.testOnly===true});
- }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';let loginNotice='';try{if(await page.locator('input[type=password]:visible').count()){const notices=await page.locator('[role=alert],[role=status],[data-sonner-toast],.error,.error-message,.alert-danger,.invalid-feedback,[class*=notification]').filter({visible:true}).allTextContents();loginNotice=notices.join(' ').replaceAll(account.password,'[entfernt]').replaceAll(account.username,'[Benutzer]').replace(/\s+/g,' ').slice(0,500);}}catch{}let signals=[];try{const text=await page.locator('body').innerText({timeout:2000});for(const [id,pattern] of [['credentials_rejected',/invalid (?:email|password|credentials)|incorrect (?:email|password|credentials)|passwort (?:ist )?(?:falsch|ungültig)|anmeldedaten (?:sind )?(?:falsch|ungültig)|zugangsdaten nicht erkannt/i],['account_not_found',/kein Benutzerkonto (?:gefunden|vorhanden)|account (?:was )?not found/i],['captcha_rejected',/(?:captcha|security verification|Sicherheitsprüfung).{0,40}(?:failed|fehlgeschlagen|erneut)/i],['package_selection',/Alle Pakete/i]])if(pattern.test(text))signals.push(id);}catch{}e.diagnostics={httpFailures,loginNotice,signals,step:currentStep,failureKind:/intercepts pointer events|subtree intercepts/i.test(e.message||'')?'overlay':/not enabled|element is disabled/i.test(e.message||'')?'disabled':/waiting for.*locator|waiting for getByRole/i.test(e.message||'')?'element_unavailable':'unclassified',route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
+ }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';let loginNotice='';try{if(await page.locator('input[type=password]:visible').count()){const notices=await page.locator('[role=alert],[role=status],[data-sonner-toast],.error,.error-message,.alert-danger,.invalid-feedback,[class*=notification]').filter({visible:true}).allTextContents();loginNotice=notices.join(' ').replaceAll(account.password,'[entfernt]').replaceAll(account.username,'[Benutzer]').replace(/\s+/g,' ').slice(0,500);}}catch{}let signals=[];try{const text=await page.locator('body').innerText({timeout:2000});for(const [id,pattern] of [['credentials_rejected',/invalid (?:email|password|credentials)|incorrect (?:email|password|credentials)|passwort (?:ist )?(?:falsch|ungültig)|anmeldedaten (?:sind )?(?:falsch|ungültig)|zugangsdaten nicht erkannt/i],['account_not_found',/kein Benutzerkonto (?:gefunden|vorhanden)|account (?:was )?not found/i],['captcha_rejected',/(?:captcha|security verification|Sicherheitsprüfung).{0,40}(?:failed|fehlgeschlagen|erneut)/i],['package_selection',/Alle Pakete/i]])if(pattern.test(text))signals.push(id);}catch{}for(const failure of httpFailures)if(['credentials_rejected','captcha_rejected'].includes(failure.reason)&&!signals.includes(failure.reason))signals.push(failure.reason);e.diagnostics={httpFailures,loginNotice,signals,step:currentStep,failureKind:/intercepts pointer events|subtree intercepts/i.test(e.message||'')?'overlay':/not enabled|element is disabled/i.test(e.message||'')?'disabled':/waiting for.*locator|waiting for getByRole/i.test(e.message||'')?'element_unavailable':'unclassified',route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
-module.exports={automate,runBrowser,periodText,publicAddress,resourceRequestAllowed};
+module.exports={automate,runBrowser,periodText,publicAddress,resourceRequestAllowed,authFailureReason};
