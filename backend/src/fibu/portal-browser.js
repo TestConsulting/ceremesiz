@@ -12,9 +12,9 @@ function periodText(month){return [month,month.slice(5)+'.'+month.slice(0,4),mon
 async function automate(page,context,account,month,{status=()=>{},code=async()=>{throw challenge('Zusätzliche Anmeldung erforderlich.');},onFile=async()=>{},testOnly=false}={}){
  const s=account.selectors||{},fill=(value)=>value.replaceAll('{{month}}',month.slice(5)).replaceAll('{{year}}',month.slice(0,4)).replaceAll('{{period}}',month);
  const visible=async selector=>selector&&await page.locator(fill(selector)).first().isVisible().catch(()=>false);
- const password=s.password||'input[type=password]',user=s.username||'input[type=email],input[name=username],input[autocomplete=username]';
+ const password=s.password||'input[type=password]:visible',user=s.username||'input[type=email]:visible,input[name=username]:visible,input[autocomplete=username]:visible';
  await page.goto(account.loginUrl,{waitUntil:'domcontentloaded',timeout:30000});
- const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Reject all|Only necessary cookies)$/i}).first();
+ const cookies=page.getByRole('button',{name:/^(Nur notwendige Cookies akzeptieren|Alle ablehnen|Ablehnen|Reject all|Only necessary cookies)$/i}).first();
  if(await cookies.isVisible().catch(()=>false))await cookies.click();
  await Promise.race([page.locator(fill(password)).first().waitFor({state:'visible',timeout:30000}),page.locator(fill(user)).first().waitFor({state:'visible',timeout:30000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').first().waitFor({state:'visible',timeout:30000})]).catch(()=>{});
  if(!await visible(password)&&await visible(user)){
@@ -39,13 +39,15 @@ async function automate(page,context,account,month,{status=()=>{},code=async()=>
   const submit=s.otpSubmit?page.locator(fill(s.otpSubmit)).first():page.getByRole('button',{name:/^(Bestätigen|Weiter|Verify|Continue|Anmelden)$/i}).first();
   await submit.click({timeout:10000});await page.waitForLoadState('domcontentloaded');
  }
- if(await visible(password))throw challenge('Anmeldung nicht abgeschlossen. Zugang oder zusätzliche Prüfung kontrollieren.');
  if(account.invoiceUrl)await page.goto(fill(account.invoiceUrl),{waitUntil:'domcontentloaded',timeout:30000});
  const logout=page.getByRole('button',{name:/Abmelden|Logout|Log out|Sign out/i}).or(page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i})).first();
  const invoiceNavigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();
+ // A redirect can finish before an asynchronously rendered dashboard is ready.
+ // Require positive account evidence; a changed URL alone never proves login.
+ await Promise.any([logout.waitFor({state:'visible',timeout:15000}),invoiceNavigation.waitFor({state:'visible',timeout:15000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').filter({hasText:/Rechnung|Invoice/i}).first().waitFor({state:'visible',timeout:15000})]).catch(()=>{});
  let authenticated=await logout.isVisible().catch(()=>false)||await invoiceNavigation.isVisible().catch(()=>false);
  if(!authenticated){const rows=page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice');for(const row of (await rows.all()).slice(0,200)){if(/Rechnung|Invoice/i.test(await row.innerText())&&!/login|register/i.test(new URL(page.url()).pathname)){authenticated=true;break;}}}
- if(!authenticated)throw Object.assign(Error('login_not_verified'),{code:'login_not_verified'});
+ if(!authenticated){if(await visible(password))throw challenge('Anmeldung nicht abgeschlossen. Zugang oder zusätzliche Prüfung kontrollieren.');throw Object.assign(Error('login_not_verified'),{code:'login_not_verified'});}
  if(testOnly)return {files:[],session:await context.storageState(),authenticated:true};
  if(!account.invoiceUrl){const navigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();if(await navigation.isVisible().catch(()=>false)){await navigation.click({timeout:10000});await page.waitForLoadState('domcontentloaded');}}
  status('downloading','Rechnungen für '+month+' werden geprüft.');

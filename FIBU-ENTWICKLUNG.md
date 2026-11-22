@@ -126,6 +126,8 @@ Die Monatsübersicht zeigt farbig markierte Buchungen als Hauptkennzahl. Grün, 
 
 ### Lieferantensperre und Deaktivierung
 
+Die Anmeldeprüfung wartet nach einer Weiterleitung bis zu 15 Sekunden auf sichtbare Konto-Nachweise (Abmelden, Rechnungsnavigation oder Rechnungszeilen). Ein Dashboard-Titel oder eine geänderte URL genügt nicht. Dadurch werden verzögert gerenderte Portale wie STAWAG nicht vorzeitig als fehlgeschlagen bewertet. Die generische Felderkennung überspringt versteckte Login-Felder; der Cookie-Dialog unterstützt auch „Ablehnen“. Ein synthetischer Browser-Test prüft verzögerten Erfolg und die Ablehnung einer nicht verifizierten Dashboard-Seite.
+
 Erkannte Zugriffssperren (z. B. Cloudflare „Just a moment…“ oder „Access denied“) setzen dauerhaft „Blockiert durch Lieferant“. Historische eindeutige Sperrergebnisse werden einmalig übernommen. Eine normale Einmalcode-Abfrage oder ein vorübergehender technischer Fehler gilt nicht automatisch als Lieferantensperre.
 
 Unter „Status & Aktivierung“ lassen sich Sperrstatus und Hinweis manuell ändern sowie „Lieferant aktiv“ ausschalten. Blockierte und deaktivierte Lieferanten werden vor einem Browserstart übersprungen; der Job protokolliert diesen Grund im Suchbereich. Eine manuell aufgehobene Sperre bleibt auch nach Neustarts aufgehoben, bis eine neue Sperre tatsächlich erkannt wird. Passwortspeichern und allgemeine Verbindungsänderungen heben eine Lieferantensperre nicht versehentlich auf. Der Sperrstatus ist unabhängig von den verschlüsselten Zugangsdaten und je Firma getrennt.
