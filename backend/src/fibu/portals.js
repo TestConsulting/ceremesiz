@@ -22,7 +22,7 @@ function portals({db,store,vault=require('./portal-vault').portalVault(db),execu
   const finish=(err,value)=>{if(done)return;done=true;clearTimeout(timer);child.kill();err?reject(err):resolve(value);};
   const timer=setTimeout(()=>finish(Object.assign(Error('timeout'),{code:'timeout'})),180000);
   task.sendCode=code=>child.send({type:'code',code});task.cancel=()=>finish(Object.assign(Error('cancelled'),{code:'cancelled'}));
-  child.on('message',m=>{if(m.type==='status')callbacks.status(m.state,m.message);if(m.type==='result')finish(null,{session:m.session,authenticated:m.authenticated,files:m.files.map(f=>({name:f.name,bytes:Buffer.from(f.data,'base64')}))});if(m.type==='error')finish(Object.assign(Error('portal_failed'),{code:m.code,diagnostics:m.diagnostics}));});child.once('error',()=>finish(Error('browser_unavailable')));child.once('exit',()=>finish(Error('browser_closed')));child.send({type:'start',input});
+  child.on('message',m=>{if(m.type==='status')callbacks.status(m.state,m.message);if(m.type==='result')finish(null,{session:m.session,authenticated:m.authenticated,files:m.files.map(f=>({name:f.name,bytes:Buffer.from(f.data,'base64')}))});if(m.type==='error')finish(Object.assign(Error('portal_failed'),{code:m.code,diagnostics:m.diagnostics}));});child.once('error',()=>finish(Object.assign(Error('browser_unavailable'),{code:'browser_unavailable'})));child.once('exit',(code,signal)=>finish(Object.assign(Error('browser_closed'),{code:'browser_closed',diagnostics:{step:'browser_process',exitCode:code,signal}})));child.send({type:'start',input});
  });}
  async function run(company,provider,month,c,owner,{job=null,testOnly=false}={}){
   if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))fail('Prüfmonat angeben.',400);

@@ -67,10 +67,12 @@ async function automate(page,context,account,month,{status=()=>{},step=()=>{},co
  step('verify_login');
  const logout=page.getByRole('button',{name:/Abmelden|Logout|Log out|Sign out/i}).or(page.getByRole('link',{name:/Abmelden|Logout|Log out|Sign out/i})).filter({visible:true}).first();
  const invoiceNavigation=s.invoiceNavigation?page.locator(fill(s.invoiceNavigation)).first():page.getByRole('link',{name:/^(Rechnungen|Meine Rechnungen|Invoices|Rechnungsübersicht)$/i}).first();
+ const packageSelection=strato?page.getByText('Alle Pakete',{exact:true}).filter({visible:true}).first():null;
  // A redirect can finish before an asynchronously rendered dashboard is ready.
  // Require positive account evidence; a changed URL alone never proves login.
  await Promise.any([logout.waitFor({state:'visible',timeout:15000}),invoiceNavigation.waitFor({state:'visible',timeout:15000}),page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice').filter({hasText:/Rechnung|Invoice/i}).first().waitFor({state:'visible',timeout:15000})]).catch(()=>{});
  let authenticated=await logout.isVisible().catch(()=>false)||await invoiceNavigation.isVisible().catch(()=>false);
+ if(!authenticated&&packageSelection&&!await visible(password)&&await packageSelection.isVisible().catch(()=>false))authenticated=true;
  if(!authenticated){const rows=page.locator(s.invoiceRows?fill(s.invoiceRows):'tr,[data-invoice],.invoice');for(const row of (await rows.all()).slice(0,200)){if(/Rechnung|Invoice/i.test(await row.innerText())&&!/login|register/i.test(new URL(page.url()).pathname)){authenticated=true;break;}}}
  if(!authenticated){if(await visible(password))throw challenge('Anmeldung nicht abgeschlossen. Zugang oder zusätzliche Prüfung kontrollieren.');throw Object.assign(Error('login_not_verified'),{code:'login_not_verified'});}
  if(testOnly)return {files:[],session:await context.storageState(),authenticated:true};
@@ -108,7 +110,7 @@ async function runBrowser(input,callbacks){
   await context.routeWebSocket('**/*',socket=>socket.close());
   page=await context.newPage();page.setDefaultTimeout(12000);
   return await automate(page,context,account,month,{...callbacks,step:value=>{currentStep=value;},testOnly:input.testOnly===true});
- }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';e.diagnostics={step:currentStep,failureKind:/intercepts pointer events|subtree intercepts/i.test(e.message||'')?'overlay':/not enabled|element is disabled/i.test(e.message||'')?'disabled':/waiting for.*locator|waiting for getByRole/i.test(e.message||'')?'element_unavailable':'unclassified',route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
+ }catch(e){let route='';try{const u=new URL(page.url());route=u.origin+u.pathname;}catch{}let title='';try{title=(await page.title()).slice(0,160);}catch{}if(e.code==='login_not_verified'&&/just a moment|einen moment|verify|security check|access denied|zugriff verweigert/i.test(title))e.code='interaction_required';let signals=[];try{const text=await page.locator('body').innerText({timeout:2000});for(const [id,pattern] of [['credentials_rejected',/invalid (?:email|password|credentials)|incorrect (?:email|password|credentials)|passwort (?:ist )?(?:falsch|ungültig)|anmeldedaten (?:sind )?(?:falsch|ungültig)/i],['account_not_found',/kein Benutzerkonto (?:gefunden|vorhanden)|account (?:was )?not found/i],['captcha_rejected',/(?:captcha|security verification|Sicherheitsprüfung).{0,40}(?:failed|fehlgeschlagen|erneut)/i],['package_selection',/Alle Pakete/i]])if(pattern.test(text))signals.push(id);}catch{}e.diagnostics={signals,step:currentStep,failureKind:/intercepts pointer events|subtree intercepts/i.test(e.message||'')?'overlay':/not enabled|element is disabled/i.test(e.message||'')?'disabled':/waiting for.*locator|waiting for getByRole/i.test(e.message||'')?'element_unavailable':'unclassified',route,title,blockedHosts:[...blocked].slice(0,25)};throw e;
  }finally{await browser?.close();await proxy.close();}
 }
 module.exports={automate,runBrowser,periodText,publicAddress,resourceRequestAllowed};
