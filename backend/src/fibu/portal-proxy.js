@@ -3,11 +3,12 @@ const {allowedUrl}=require('./portal-catalog');
 // Resolve and dial the same public address: a custom host cannot rebind to an internal service.
 async function portalProxy(provider,definition,{resolve=host=>dns.lookup(host,{all:true}),dial=options=>net.connect(options)}={}){
  const sockets=new Set(),server=http.createServer((req,res)=>{res.writeHead(403);res.end();});
- server.on('connection',socket=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));});
+ server.on('connection',socket=>{sockets.add(socket);socket.on('error',()=>socket.destroy());socket.on('close',()=>sockets.delete(socket));});
  server.on('connect',async(req,client,head)=>{
   try{
    const target=new URL('https://'+req.url);if(target.port&&target.port!=='443')throw Error();allowedUrl(provider,target.href,definition);
    const addresses=await resolve(target.hostname);if(!addresses.length||addresses.some(a=>!require('./portal-browser').publicAddress(a.address)))throw Error();
+   if(client.destroyed)return;
    const address=addresses.find(a=>net.isIP(a.address)===4)||addresses[0],upstream=dial({host:address.address,port:443});sockets.add(upstream);
    upstream.on('error',()=>client.destroy());client.on('error',()=>upstream.destroy());client.on('close',()=>upstream.destroy());upstream.on('close',()=>{sockets.delete(upstream);client.destroy();});
    upstream.setTimeout(30000,()=>upstream.destroy());upstream.once('connect',()=>{client.write('HTTP/1.1 200 Connection Established\r\n\r\n');if(head.length)upstream.write(head);client.pipe(upstream);upstream.pipe(client);});

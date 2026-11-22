@@ -18,11 +18,11 @@ function portals({db,store,vault=require('./portal-vault').portalVault(db),execu
  }
 
  function childExecution(input,callbacks){return new Promise((resolve,reject)=>{
-  const child=fork(path.join(__dirname,'portal-child.js'),[],{stdio:['ignore','ignore','ignore','ipc'],windowsHide:true,execArgv:['--max-old-space-size=512']}),task=active.get(key(input.company,input.provider));let done=false;
+  const child=fork(path.join(__dirname,'portal-child.js'),[],{stdio:['ignore','ignore','pipe','ipc'],windowsHide:true,execArgv:['--max-old-space-size=512']}),task=active.get(key(input.company,input.provider));let done=false,processError='unknown';child.stderr.on('data',chunk=>{const text=chunk.toString();if(/ECONNRESET|EPIPE/.test(text))processError='connection_reset';else if(/heap out of memory|allocation failed/i.test(text))processError='memory_limit';else if(/unhandled|uncaught/i.test(text))processError='unhandled_error';});
   const finish=(err,value)=>{if(done)return;done=true;clearTimeout(timer);child.kill();err?reject(err):resolve(value);};
   const timer=setTimeout(()=>finish(Object.assign(Error('timeout'),{code:'timeout'})),180000);
   task.sendCode=code=>child.send({type:'code',code});task.cancel=()=>finish(Object.assign(Error('cancelled'),{code:'cancelled'}));
-  child.on('message',m=>{if(m.type==='status')callbacks.status(m.state,m.message);if(m.type==='result')finish(null,{session:m.session,authenticated:m.authenticated,files:m.files.map(f=>({name:f.name,bytes:Buffer.from(f.data,'base64')}))});if(m.type==='error')finish(Object.assign(Error('portal_failed'),{code:m.code,diagnostics:m.diagnostics}));});child.once('error',()=>finish(Object.assign(Error('browser_unavailable'),{code:'browser_unavailable'})));child.once('exit',(code,signal)=>finish(Object.assign(Error('browser_closed'),{code:'browser_closed',diagnostics:{step:'browser_process',exitCode:code,signal}})));child.send({type:'start',input});
+  child.on('message',m=>{if(m.type==='status')callbacks.status(m.state,m.message);if(m.type==='result')finish(null,{session:m.session,authenticated:m.authenticated,files:m.files.map(f=>({name:f.name,bytes:Buffer.from(f.data,'base64')}))});if(m.type==='error')finish(Object.assign(Error('portal_failed'),{code:m.code,diagnostics:m.diagnostics}));});child.once('error',()=>finish(Object.assign(Error('browser_unavailable'),{code:'browser_unavailable'})));child.once('exit',(code,signal)=>finish(Object.assign(Error('browser_closed'),{code:'browser_closed',diagnostics:{step:'browser_process',exitCode:code,signal,processError}})));child.send({type:'start',input});
  });}
  async function run(company,provider,month,c,owner,{job=null,testOnly=false}={}){
   if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))fail('Prüfmonat angeben.',400);
