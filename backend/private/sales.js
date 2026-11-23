@@ -224,7 +224,7 @@ async function viewSales(page) {
   }
 
   async function showSettings() {
-    const {config,definitions}=await salesApi('/sources');
+    const {config,definitions,credentialStorageReady,credentials}=await salesApi('/sources');
     if(!active())return;
     body.innerHTML=panel('Quellen und Suchvorgaben','<form id="sales-sources">'+
       Object.entries(definitions).map(([key,source])=>'<label><input type="checkbox" name="source" value="'+key+'" '+
@@ -233,7 +233,27 @@ async function viewSales(page) {
       salesField('Geplante Zeiten, komma- oder zeilengetrennt','times','text',config.times.join(', '))+
       '<p>Zeitzone Europe/Berlin. Scheduler inaktiv, bis ein autorisierter automatischer Abruf verfügbar ist. Postfachimport ausgesetzt.</p>'+
       '<button type="submit" class="btn primary">Konfiguration speichern</button></form>')+
+      panel('Portalzugänge',Object.entries(definitions).map(([key,source])=>{
+        const account=credentials[key];
+        const state=account.configured?'Zugang gespeichert · Anmeldung nicht automatisch geprüft':'Noch kein Zugang hinterlegt';
+        return '<details class="panel"><summary><b>'+esc(source.label)+'</b> · '+state+'</summary>'+
+          (BOOT.salesEditor&&credentialStorageReady?'<form id="sales-login-'+key+'">'+
+            '<label class="field">Benutzername oder E-Mail<input name="username" type="text" autocomplete="username" maxlength="250" value="'+esc(account.username)+'" required></label>'+
+            '<label class="field">Passwort<input name="password" type="password" autocomplete="new-password" maxlength="1000" '+(account.configured?'':'required')+'></label>'+
+            (account.configured?'<p class="muted">Passwort leer lassen, um das gespeicherte Passwort zu behalten.</p>':'')+
+            '<button class="btn primary" type="submit">Zugang speichern</button></form>':
+            '<p>'+(BOOT.salesEditor?'Der Schlüssel für die verschlüsselte Speicherung fehlt.':'Zugänge können von berechtigten Konten bearbeitet werden.')+'</p>')+
+          '<p><a href="'+esc(source.url)+'" target="_blank" rel="noopener noreferrer">Portal öffnen ↗</a></p></details>';
+      }).join(''))+
       panel('Erreichbarkeit der Portale',salesButton('Quellen prüfen','id="sales-source-check"')+'<div id="sales-source-run" aria-live="polite"></div>');
+    if(BOOT.salesEditor&&credentialStorageReady)for(const key of Object.keys(definitions)){
+      submit('sales-login-'+key,async f=>{
+        await salesApi('/sources/'+key+'/credentials',{username:f.get('username'),password:f.get('password'),version:credentials[key].version});
+        await showSettings();
+        const section=body.querySelector('#sales-login-'+key)?.closest('details');
+        if(section)section.open=true;
+      });
+    }
     submit('sales-sources',async f=>{
       await salesApi('/sources',{revision:config.revision,sources:f.getAll('source'),
         keywords:f.get('keywords').split(/[,\n]/).map(x=>x.trim()).filter(Boolean),

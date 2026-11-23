@@ -15,6 +15,14 @@ module.exports = function salesRoutes({ db, allowedOrigins, access }) {
   const router = express.Router();
   const store = require('../sales/store')(db);
   const sources = require('../sales/sources')(db);
+  const { portalVault } = require('../fibu/portal-vault');
+  const vault = portalVault(db,process.env.SALES_PORTAL_KEY || process.env.FIBU_PORTAL_KEY || process.env.FIBU_TOKEN_KEY);
+  const accessScope='sales';
+  function portalSummary(key, editor) {
+    const configured=vault.ids(accessScope).includes(key);
+    const account=configured&&vault.ready&&editor?vault.get(accessScope,key):null;
+    return { configured, username:account?.username||'', version:account?.version||0 };
+  }
   const write = [requireSameOriginJson(allowedOrigins), requireCsrf, express.json({ limit: '15mb' })];
   router.use(requireAuthApi,(req,res,next) => {
     res.set('Cache-Control','no-store');
@@ -24,7 +32,8 @@ module.exports = function salesRoutes({ db, allowedOrigins, access }) {
     next();
   });
   router.get('/sources', (req,res) => res.json({
-    config:sources.getConfig(), definitions:sources.definitions, run:sources.recent()
+    config:sources.getConfig(), definitions:sources.definitions, run:sources.recent(),
+    credentialStorageReady:vault.ready, credentials:Object.fromEntries(Object.keys(sources.definitions).map(key=>[key,portalSummary(key,req.salesAccess.edit)]))
   }));
   router.post('/sources',...write,(req,res) => {
     const b=req.body||{};
@@ -33,6 +42,18 @@ module.exports = function salesRoutes({ db, allowedOrigins, access }) {
     requireValue(Array.isArray(b.times)&&b.times.length<=12&&b.times.every(t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t)),'Ungültige Suchzeiten.');
     res.json(sources.save({revision:b.revision,sources:[...new Set(b.sources)],
       keywords:[...new Set(b.keywords.map(k=>text(k,75)).filter(Boolean))],times:[...new Set(b.times)].sort()}));
+  });
+  router.post('/sources/:key/credentials',...write,(req,res) => {
+    const key=req.params.key, b=req.body||{};
+    requireValue(Object.hasOwn(sources.definitions,key),'Unbekannte Quelle.');
+    requireValue(typeof b.username==='string'&&b.username.trim()&&b.username.length<=250,'Benutzername eingeben.');
+    requireValue(typeof b.password==='string'&&b.password.length<=1000,'Ungültiges Passwortfeld.');
+    requireValue(Number.isSafeInteger(b.version)&&b.version>=0,'Versionsangabe fehlt.');
+    const previous=vault.get(accessScope,key), username=b.username.trim();
+    requireValue(b.password||(previous?.username===username&&previous.password),
+      'Beim ersten Speichern oder einem Wechsel des Benutzernamens ein Passwort eingeben.');
+    vault.put(accessScope,key,{username,password:b.password||previous.password},b.version);
+    res.json(portalSummary(key,true));
   });
   router.post('/sources/check',...write,(req,res) => res.status(202).json({id:sources.start()}));
   router.get('/employees', (req,res) => res.json(store.listEmployees()));

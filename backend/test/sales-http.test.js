@@ -7,6 +7,7 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'astra-sales-http-'));
 process.env.DB_PATH=path.join(dir,'test.db');
 process.env.SALES_PILOT_USERS='sales-pilot@example.invalid';
 process.env.SALES_APPROVER_USERS='sales-pilot@example.invalid';
+process.env.SALES_PORTAL_KEY=require('node:crypto').randomBytes(32).toString('base64');
 const { createApp }=require('../src/app');
 const { upsertUser }=require('../src/users');
 const db=require('../src/db');
@@ -56,12 +57,28 @@ test('Vertriebsrouten schützen echte Dokumente und schreiben nur mit CSRF', asy
     assert.equal((await preview.json()).evidence,'2025 Selenium & Testmanagement');
     const settings=await fetch(origin+'/api/sales/sources',{headers:{cookie:pilot.cookie}});
     assert.deepEqual((await settings.json()).config.keywords,['Selenium','Tester','Testmanager']);
+    const accessPath='/api/sales/sources/freelancermap/credentials';
+    const accessInput={username:'pilot@example.invalid',password:'SyntheticPortalPassword!',version:0};
+    assert.equal((await post(accessPath,accessInput,false)).status,403);
+    const savedAccess=await post(accessPath,accessInput);
+    assert.equal(savedAccess.status,200);
+    const summary={configured:true,username:accessInput.username,version:1};
+    assert.deepEqual(await savedAccess.json(),summary);
+    const row=db.prepare("SELECT payload FROM fibu_portal_accounts WHERE company='sales' AND provider='freelancermap'").get();
+    assert.ok(!row.payload.includes(accessInput.password));
+    assert.ok(!row.payload.includes(accessInput.username));
+    const update=await post(accessPath,{...accessInput,password:'',version:1});
+    assert.deepEqual(await update.json(),{...summary,version:2});
+    assert.equal((await post(accessPath,{...accessInput,password:'',username:'different@example.invalid',version:2})).status,400);
+    assert.equal((await post(accessPath,accessInput)).status,409);
     process.env.SALES_PILOT_USERS='*';
     const readonlyServer=createApp({sessionSecret:'test-only-long-session-secret'}).listen(0,'127.0.0.1');
     await new Promise(resolve=>readonlyServer.once('listening',resolve));
     try{
       const readonlyOrigin='http://127.0.0.1:'+readonlyServer.address().port;
       assert.equal((await fetch(readonlyOrigin+'/api/sales/employees',{headers:{cookie:other.cookie}})).status,200);
+      const publicSettings=await (await fetch(readonlyOrigin+'/api/sales/sources',{headers:{cookie:other.cookie}})).json();
+      assert.deepEqual(publicSettings.credentials.freelancermap,{configured:true,username:'',version:0});
       const edit=await fetch(readonlyOrigin+'/api/sales/employees',{method:'POST',
         headers:{cookie:other.cookie,'Content-Type':'application/json','X-CSRF-Token':other.csrf},
         body:JSON.stringify(e)});
