@@ -6,6 +6,7 @@ const fs=require('node:fs');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'astra-sales-http-'));
 process.env.DB_PATH=path.join(dir,'test.db');
 process.env.SALES_PILOT_USERS='sales-pilot@example.invalid';
+process.env.SALES_APPROVER_USERS='sales-pilot@example.invalid';
 const { createApp }=require('../src/app');
 const { upsertUser }=require('../src/users');
 const db=require('../src/db');
@@ -55,6 +56,17 @@ test('Vertriebsrouten schützen echte Dokumente und schreiben nur mit CSRF', asy
     assert.equal((await preview.json()).evidence,'2025 Selenium & Testmanagement');
     const settings=await fetch(origin+'/api/sales/sources',{headers:{cookie:pilot.cookie}});
     assert.deepEqual((await settings.json()).config.keywords,['Selenium','Tester','Testmanager']);
+    process.env.SALES_PILOT_USERS='*';
+    const readonlyServer=createApp({sessionSecret:'test-only-long-session-secret'}).listen(0,'127.0.0.1');
+    await new Promise(resolve=>readonlyServer.once('listening',resolve));
+    try{
+      const readonlyOrigin='http://127.0.0.1:'+readonlyServer.address().port;
+      assert.equal((await fetch(readonlyOrigin+'/api/sales/employees',{headers:{cookie:other.cookie}})).status,200);
+      const edit=await fetch(readonlyOrigin+'/api/sales/employees',{method:'POST',
+        headers:{cookie:other.cookie,'Content-Type':'application/json','X-CSRF-Token':other.csrf},
+        body:JSON.stringify(e)});
+      assert.equal(edit.status,403);
+    }finally{await new Promise(resolve=>readonlyServer.close(resolve));}
     const fibu=await fetch(origin+'/api/fibu/companies',{headers:{cookie:pilot.cookie}});
     assert.equal(fibu.status,200);
   }finally{

@@ -13,7 +13,7 @@ $env:SALES_APPROVER_USERS = 'astra-dev@example.invalid'
 npm.cmd run dev
 ```
 
-Die Adresse lautet http://127.0.0.1:4090. Beide Listen sind kommasepariert. Freigabe erfordert Pilotzugriff und einen Eintrag in der Freigabeliste. Für eine geschützte bereitgestellte Instanz die echten berechtigten Konten und die vorhandene private Konfiguration verwenden. Die Testadresse gehört ausschließlich in die lokale Umgebung. Ohne Pilotliste bleiben die neuen Ansichten ausgeblendet und die API wird nicht eingebunden.
+Die Adresse lautet http://127.0.0.1:4090. Die Listen sind kommasepariert. In Produktion sehen standardmäßig alle angemeldeten Holding-Konten den Pilot. Die Bearbeitung und Freigabe sind standardmäßig auf den dokumentierten Holding-Login von Taner beschränkt. SALES_PILOT_USERS, SALES_EDITOR_USERS und SALES_APPROVER_USERS können dies in der privaten Serverumgebung überschreiben. Ein leerer Wert für SALES_PILOT_USERS deaktiviert den Pilot. Die Testadresse gehört ausschließlich in die lokale Umgebung.
 
 ## Ablauf
 

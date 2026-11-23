@@ -11,14 +11,16 @@ function requireValue(valid, message) {
   if (!valid) throw Object.assign(new Error(message), { status:400 });
 }
 
-module.exports = function salesRoutes({ db, allowedOrigins, emails, approvers }) {
+module.exports = function salesRoutes({ db, allowedOrigins, access }) {
   const router = express.Router();
   const store = require('../sales/store')(db);
   const sources = require('../sales/sources')(db);
   const write = [requireSameOriginJson(allowedOrigins), requireCsrf, express.json({ limit: '15mb' })];
   router.use(requireAuthApi,(req,res,next) => {
     res.set('Cache-Control','no-store');
-    if (!emails.has(req.user.email.toLowerCase())) return res.status(403).json({error:'Kein Zugriff auf den Vertriebspilot.'});
+    req.salesAccess=access(req.user.email);
+    if (!req.salesAccess.view) return res.status(403).json({error:'Kein Zugriff auf den Vertriebspilot.'});
+    if (req.method==='POST' && !req.salesAccess.edit) return res.status(403).json({error:'Der Vertriebspilot ist für dieses Konto schreibgeschützt.'});
     next();
   });
   router.get('/sources', (req,res) => res.json({
@@ -115,7 +117,7 @@ module.exports = function salesRoutes({ db, allowedOrigins, emails, approvers })
     res.json(store.move(req.params.id,b.revision,b.state));
   });
   router.post('/projects/:id/approve',...write,(req,res) => {
-    if(!approvers.has(req.user.email.toLowerCase()))return res.status(403).json({error:'Keine Freigabeberechtigung.'});
+    if(!req.salesAccess.approve)return res.status(403).json({error:'Keine Freigabeberechtigung.'});
     const b=req.body||{};
     requireValue(b.confirm===true,'Diese Angebotsversion ausdrücklich bestätigen.');
     res.json(store.approve(req.params.id,b.revision,req.user.id));

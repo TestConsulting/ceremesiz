@@ -37,9 +37,10 @@ async function viewSales(page) {
     catch(ex) { if(active())error.textContent=ex.message; }
   };
   const panel=(name,html)=>'<section class="panel"><h2>'+esc(name)+'</h2>'+html+'</section>';
-  const bind=(id,fn)=>{const element=body.querySelector('#'+id);if(element)element.onclick=guard(fn);};
-  const submit=(id,fn)=>{body.querySelector('#'+id).onsubmit=guard(async e=>{
+  const bind=(id,fn)=>{const element=body.querySelector('#'+id);if(!element)return;if(!BOOT.salesEditor){element.disabled=true;return;}element.onclick=guard(fn);};
+  const submit=(id,fn)=>{const form=body.querySelector('#'+id);if(!BOOT.salesEditor){form.querySelectorAll('input,textarea,button[type=submit]').forEach(field=>field.disabled=true);return;}form.onsubmit=guard(async e=>{
     e.preventDefault();
+    if(!BOOT.salesEditor)throw new Error('Der Vertriebspilot ist für dieses Konto schreibgeschützt.');
     const button=e.currentTarget.querySelector('button[type=submit]');
     if(button)button.disabled=true;
     try{await fn(new FormData(e.currentTarget));}
@@ -245,7 +246,7 @@ async function viewSales(page) {
       if(!active()||!target)return;
       const button=body.querySelector('#sales-source-check');
       const running=run&&!run.finished&&Date.now()-new Date(run.started).getTime()<60000;
-      button.disabled=Boolean(running);
+      button.disabled=!BOOT.salesEditor||Boolean(running);
       if(run) {
         const complete=run.sources.filter(s=>['manual','failed'].includes(s.state)).length;
         const labels={pending:'Offen',running:'In Arbeit',manual:'Manueller Schritt erforderlich',failed:'Fehlgeschlagen'};
