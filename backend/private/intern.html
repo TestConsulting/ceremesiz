@@ -694,6 +694,7 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="/intern/fibu.js?v=__FIBU_UI_VERSION__"></script>
 <script src="/intern/fibu-cockpit.js?v=__FIBU_UI_VERSION__"></script>
+<script src="/intern/sales.js"></script>
 <script>
 /* ---------------- Helfer ---------------- */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -729,8 +730,8 @@ function renderNav(r){
   nav.innerHTML=TOP_NAV.map(([id,name])=>sidebarLink(id,name,r,true)).join('')+NAV.map(g=>{
     const entry=sidebarEntry('groups',g.co,CO[g.co].n);
     return `<div class="nav-grp"><div class="nav-grp-h ${entry.beta?'beta':''}"><span class="dot" style="background:${CO[g.co].c}"></span>${esc(entry.name)}${sidebarBadge(entry)}</div>
-    ${g.items.map(([id,name])=>sidebarLink(id,name,r)).join('')}</div>`;
-  }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a><a href="#settings-fibu" class="${r==='settings-fibu'?'on':''}" style="padding-left:30px">FiBu</a><a href="#settings-portals" class="${r==='settings-portals'?'on':''}" style="padding-left:30px">Lieferantenportale</a>`;
+    ${g.items.map(([id,name])=>id==="vertrieb"&&BOOT.salesPilot?`<span style="display:block;padding:6px 14px">Vertrieb</span><span style="display:block;padding-left:12px">${sidebarLink("vertrieb-master","Master Templates",r)}${sidebarLink("vertrieb-projekte","Projekte/Freigaben",r)}</span>`:sidebarLink(id,name,r)).join('')}</div>`;
+  }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a><a href="#settings-fibu" class="${r==='settings-fibu'?'on':''}" style="padding-left:30px">FiBu</a><a href="#settings-portals" class="${r==='settings-portals'?'on':''}" style="padding-left:30px">Lieferantenportale</a>${BOOT.salesPilot?`<span style="display:block;padding-left:12px">${sidebarLink("settings-vertrieb","Vertriebskonfig",r)}</span>`:""}`;
 }
 
 /* ---------------- Daten: Renditekalkulation ---------------- */
@@ -863,7 +864,7 @@ if(!emps){
 }
 
 /* ---------------- Routing ---------------- */
-const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:viewVertrieb,marketing:viewMarketing,ppt:viewPPT,settings:viewSettings,'settings-portals':()=>viewFibuPortals(),'settings-fibu':()=>viewFibuSettings()};
+const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:()=>BOOT.salesPilot?viewSales("projects"):viewVertrieb(),"vertrieb-master":()=>viewSales("employees"),"vertrieb-projekte":()=>viewSales("projects"),"settings-vertrieb":()=>viewSales("settings"),marketing:viewMarketing,ppt:viewPPT,settings:viewSettings,'settings-portals':()=>viewFibuPortals(),'settings-fibu':()=>viewFibuSettings()};
 function route(){
   const h=curRoute||'dashboard';
   if(!auth.get()){location.replace('/#login');return}

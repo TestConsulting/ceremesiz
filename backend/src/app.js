@@ -46,8 +46,11 @@ function createApp(options = {}) {
     next();
   });
 
+  const salesEmails = new Set((process.env.SALES_PILOT_USERS || '').split(',').map(email=>email.trim().toLowerCase()).filter(Boolean));
+  const salesApprovers = new Set((process.env.SALES_APPROVER_USERS || '').split(',').map(email=>email.trim().toLowerCase()).filter(Boolean));
+  const salesEnabled = salesEmails.size > 0;
   const normalJson=express.json({ limit: '10kb' });
-  app.use((req,res,next)=>req.path.startsWith('/api/fibu-runner/')||/^\/api\/fibu\/imports\/[^/]+$/.test(req.path)?next():normalJson(req,res,next));
+  app.use((req,res,next)=>(salesEnabled && req.path.startsWith('/api/sales/')) || req.path.startsWith('/api/fibu-runner/')||/^\/api\/fibu\/imports\/[^/]+$/.test(req.path)?next():normalJson(req,res,next));
   app.use(session({
     name: SESSION_COOKIE,
     secret,
@@ -64,6 +67,7 @@ function createApp(options = {}) {
   const fibu=require('./routes/fibu')({ db, allowedOrigins, ...options.fibu });
   app.use('/api/fibu', fibu);
   app.use('/api/fibu-runner', fibu.runnerRouter);
+  if (salesEnabled) app.use('/api/sales', require('./routes/sales')({ db, allowedOrigins, emails:salesEmails, approvers:salesApprovers }));
   app.use('/api', (req, res) => res.status(404).json({ error: 'Nicht gefunden' }));
 
   // Öffentliche Website
@@ -76,10 +80,13 @@ function createApp(options = {}) {
   let internCache = null;
   const internHtml = () => (isProd && internCache) || (internCache = fs.readFileSync(internFile, 'utf8'));
   app.get(['/intern', '/intern/'], requireAuthPage, (req, res) => {
-    const boot = { user: publicUser(req.user), csrfToken: req.session.csrfToken, sidebarSettings: getSettings(),fibuUiVersion };
+    const boot = { user: publicUser(req.user), csrfToken: req.session.csrfToken, sidebarSettings: getSettings(),fibuUiVersion,salesPilot:salesEmails.has(req.user.email.toLowerCase()),salesApprover:salesApprovers.has(req.user.email.toLowerCase()) };
     const html = internHtml().replaceAll('__FIBU_UI_VERSION__',fibuUiVersion).replace('<!--__BOOT__-->', `<script>window.__BOOT__=${inlineJson(boot)}</script>`);
     res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
     res.type('html').send(html);
+  });
+  app.get('/intern/sales.js', requireAuthPage, (req,res) => {
+    res.set('Cache-Control','no-store').sendFile(path.join(PRIVATE_DIR,'sales.js'));
   });
   app.get('/intern/fibu.js', requireAuthPage, (req, res) => {
     res.set('Cache-Control', 'no-store').sendFile(path.join(PRIVATE_DIR, 'fibu.js'));
