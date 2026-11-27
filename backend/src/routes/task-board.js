@@ -18,7 +18,7 @@ function validate(b){
   return set(b.cards,2500,k=>cols.has(k.col)&&text(k.t,500)&&k.t.trim()&&text(k.d,20000)&&
     (k.co===''||companies.has(k.co))&&Array.isArray(k.who)&&k.who.every(w=>people.has(w))&&k.who.length<=people.size&&
     typeof k.due==='string'&&(!k.due||/^\d{4}-\d{2}-\d{2}$/.test(k.due))&&['hoch','mittel','niedrig'].includes(k.prio)&&
-    flag(k.demo)&&Array.isArray(k.cl)&&k.cl.length<=200&&k.cl.every(c=>c&&text(c.t,1000)&&flag(c.ok)));
+    flag(k.demo)&&[undefined,true,false].includes(k.completed)&&[undefined,true,false].includes(k.archived)&&Array.isArray(k.cl)&&k.cl.length<=200&&k.cl.every(c=>c&&text(c.t,1000)&&flag(c.ok)));
 }
 function createTaskBoard(db,allowedOrigins){
   db.exec('CREATE TABLE IF NOT EXISTS task_board (id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,payload TEXT);INSERT OR IGNORE INTO task_board VALUES(1,0,NULL)');

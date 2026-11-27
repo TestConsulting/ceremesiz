@@ -91,11 +91,16 @@ test('Angemeldete Konten teilen sich Vertrieb und Aufgabenboard', async () => {
     assert.deepEqual(await readBoard(other),{revision:1,board});
     const updated=structuredClone(board);
     updated.cards[0].t='Von anderem Konto geändert';
+    updated.cards[0].completed=true;
+    updated.cards[0].archived=true;
     const conflict=await putBoard(other,0,updated);
     assert.equal(conflict.status,409);
     assert.deepEqual((await conflict.json()).board,board);
     assert.deepEqual(await (await putBoard(other,1,updated)).json(),{revision:2});
     assert.deepEqual(await readBoard(pilot),{revision:2,board:updated});
+    updated.cards[0].archived=false;
+    assert.deepEqual(await (await putBoard(pilot,2,updated)).json(),{revision:3});
+    assert.deepEqual(await readBoard(other),{revision:3,board:updated});
     const fibu=await fetch(origin+'/api/fibu/companies',{headers:{cookie:pilot.cookie}});
     assert.equal(fibu.status,200);
   }finally{

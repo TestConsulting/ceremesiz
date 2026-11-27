@@ -611,9 +611,17 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 .bd-card:hover{border-color:var(--muted);border-left-color:var(--co)}
 .bd-card.dragging{opacity:.4}
 .bd-card-row{position:relative}
-.bd-card b{font-size:13px;font-weight:600;line-height:1.35;padding-right:30px;overflow-wrap:anywhere}
-.bd-card-delete{position:absolute;top:4px;right:4px;width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:19px;cursor:pointer}
-.bd-card-delete:hover,.bd-card-delete:focus-visible{background:var(--surface-2);color:var(--bad)}
+.bd-card b{font-size:13px;font-weight:600;line-height:1.35;padding:0 52px 0 25px;overflow-wrap:anywhere}
+.bd-card-action{position:absolute;top:3px;width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;cursor:pointer}
+.bd-card-action:hover,.bd-card-action:focus-visible{background:var(--surface-2);color:var(--ink)}
+.bd-card-delete{right:3px;font-size:19px}
+.bd-card-delete:hover,.bd-card-delete:focus-visible{color:var(--bad)}
+.bd-card-archive{right:31px}
+.bd-card-check{left:5px}
+.bd-card-check span{width:17px;height:17px;border:1px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:12px;line-height:1}
+.bd-card-check[aria-pressed="true"] span{background:#35751d;border-color:#35751d;color:white}
+.bd-card[draggable="false"]{cursor:pointer}
+.bd-archive-list{margin-top:10px;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr))}
 .bd-card.done b{text-decoration:line-through;color:var(--muted)}
 .bd-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .bd-tag{font-size:10.5px;font-weight:700;color:var(--co);background:var(--field);border-radius:4px;padding:1px 6px}
@@ -2083,16 +2091,16 @@ async function importLocalBoard(){
   if(boardActive())viewBoard();
 }
 setInterval(refreshBoard,15000);
-let bdF={co:'alle',who:'alle',q:'',due:false},bdForm=null,bdQuick=null,bdDrag=null;
+let bdF={co:'alle',who:'alle',q:'',due:false},bdForm=null,bdQuick=null,bdDrag=null,bdArchiveOpen=false;
 const bdUse=(kind,id)=>board.cards.filter(k=>kind==='people'?k.who.includes(id):k.co===id).length;
 function bdDueDate(value){
   const weekday=new Date(value+'T00:00:00Z').getUTCDay();
   if(!Number.isFinite(weekday))return deDate(value);
   return ['So','Mo','Di','Mi','Do','Fr','Sa'][weekday]+' '+deDate(value);
 }
-const bdDone=k=>{const c=board.cols.find(x=>x.id===k.col);return !!(c&&c.done)};
+const bdDone=k=>k.completed??!!board.cols.find(c=>c.id===k.col)?.done;
 const bdDueCls=k=>{if(!k.due||bdDone(k))return '';const t=todayIso();if(k.due<t)return 'late';const d=(new Date(k.due+'T12:00:00')-new Date(t+'T12:00:00'))/864e5;return d<=3?'soon':''};
-const bdOpenDue=()=>board.cards.filter(k=>!bdDone(k)&&k.due&&(new Date(k.due+'T12:00:00')-new Date(todayIso()+'T12:00:00'))/864e5<=7);
+const bdOpenDue=()=>board.cards.filter(k=>!k.archived&&!bdDone(k)&&k.due&&(new Date(k.due+'T12:00:00')-new Date(todayIso()+'T12:00:00'))/864e5<=7);
 function bdVisible(k){
   if(bdF.co!=='alle'&&k.co!==bdF.co)return false;
   if(bdF.who!=='alle'&&!k.who.includes(bdF.who))return false;
@@ -2102,16 +2110,20 @@ function bdVisible(k){
 }
 function bdCardHTML(k){
   const done=bdDone(k),dc=bdDueCls(k),okN=k.cl.filter(x=>x.ok).length,p=BD_PRIO[k.prio]||BD_PRIO.mittel,co=bdCo(k.co);
-  return `<div class="bd-card-row" data-card-row="${esc(k.id)}"><button type="button" class="bd-card ${done?'done':''}" draggable="true" data-card="${esc(k.id)}" style="--co:${co?co.c:'var(--line)'}" aria-label="${esc(k.t)} öffnen">
+  return `<div class="bd-card-row" data-card-row="${esc(k.id)}"><button type="button" class="bd-card ${done?'done':''}" draggable="${!k.archived}" data-card="${esc(k.id)}" style="--co:${co?co.c:'var(--line)'}" aria-label="${esc(k.t)} öffnen">
     <b>${esc(k.t)}</b>
     <div class="bd-meta">${co?`<span class="bd-tag ${co.img?'logo':''}" title="${esc(coLbl(co))}">${coFace(co,16)}</span>`:''}<span class="bd-prio" style="background:${p[1]}" title="Priorität ${p[0]}"></span>
       ${k.due?`<span class="bd-due ${dc}" title="Fällig">${dc==='late'?'überfällig · ':''}${esc(bdDueDate(k.due))}</span>`:''}
       ${k.cl.length?`<span class="bd-cl ${okN===k.cl.length?'full':''}">☑ ${okN}/${k.cl.length}</span>`:''}
       ${k.demo?'<span class="bd-cl">Beispiel</span>':''}
-      <span class="bd-av">${k.who.map(id=>{const pp=bdP(id);return pp?`<span style="background:${pp.c}" title="${esc(pp.n)}">${pp.img?`<img src="${pp.img}" alt="">`:esc(iniOf(pp.n))}</span>`:''}).join('')}</span></div></button><button type="button" class="bd-card-delete" data-card-delete="${esc(k.id)}" aria-label="${esc(k.t)} löschen" title="Karte löschen">×</button></div>`;
+      <span class="bd-av">${k.who.map(id=>{const pp=bdP(id);return pp?`<span style="background:${pp.c}" title="${esc(pp.n)}">${pp.img?`<img src="${pp.img}" alt="">`:esc(iniOf(pp.n))}</span>`:''}).join('')}</span></div></button>
+    <button type="button" class="bd-card-action bd-card-check" data-card-check="${esc(k.id)}" aria-pressed="${done}" aria-label="${esc(k.t)}: Erledigt" title="${done?'Als offen markieren':'Als erledigt markieren'}"><span aria-hidden="true">${done?'✓':''}</span></button>
+    <button type="button" class="bd-card-action bd-card-archive" data-card-archive="${esc(k.id)}" aria-label="${esc(k.t)} ${k.archived?'wiederherstellen':'archivieren'}" title="${k.archived?'Wiederherstellen':'Archivieren'}">${k.archived?'↶':`<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 9h16v12H4zM3 4h18v5H3zM9 13h6"/></svg>`}</button>
+    <button type="button" class="bd-card-action bd-card-delete" data-card-delete="${esc(k.id)}" aria-label="${esc(k.t)} löschen" title="Karte löschen">×</button></div>`;
 }
 function viewBoard(){
-  const open=board.cards.filter(k=>!bdDone(k)).length,late=board.cards.filter(k=>bdDueCls(k)==='late').length;
+  const active=board.cards.filter(k=>!k.archived),archived=board.cards.filter(k=>k.archived);
+  const open=active.filter(k=>!bdDone(k)).length,late=active.filter(k=>bdDueCls(k)==='late').length;
   $('#main').innerHTML=head(null,'Aufgaben','Aufgaben-Board',`${legacyBoard?.cards?.some(k=>!k.demo)&&!store.get('ch_board_imported_v1',false)?'<button class="btn" id="bdImport">Lokale Aufgaben übernehmen</button>':''}<button class="btn" id="bdSet">Personen &amp; Firmen</button><button class="btn" id="bdAddCol">+ Spalte</button><button class="btn primary" id="bdAddCard">+ Karte</button>`)+`
   <div class="bd-bar">
     <div class="mat-chips"><button type="button" class="mat-chip bd-chip ${bdF.co==='alle'?'on':''}" data-bco="alle">Alle</button>${board.cos.map(c=>`<button type="button" class="mat-chip bd-chip ${c.img?'logo':''} ${bdF.co===c.id?'on':''}" data-bco="${c.id}" title="${esc(coLbl(c))}" aria-label="Filter ${esc(coLbl(c))}">${coFace(c,20)}</button>`).join('')}</div>
@@ -2121,7 +2133,7 @@ function viewBoard(){
       <label class="switch"><input type="checkbox" id="bdDue" ${bdF.due?'checked':''}> Nur fällig (7 Tage)</label>
       <span class="muted" style="font-size:12px">${open} offen${late?` · <b style="color:var(--bad)">${late} überfällig</b>`:''}</span>
     </div></div>
-  <div class="bd-scroll"><div class="bd" id="bd">${board.cols.map(c=>{const cards=board.cards.filter(k=>k.col===c.id),vis=cards.filter(bdVisible);
+  <div class="bd-scroll"><div class="bd" id="bd">${board.cols.map(c=>{const cards=active.filter(k=>k.col===c.id),vis=cards.filter(bdVisible);
     return `<section class="bd-col" data-col="${c.id}" aria-label="Spalte ${esc(c.n)}">
       <div class="bd-col-h"><b>${esc(c.n)}${c.done?' <span class="pill good" style="font-size:10px;padding:0 6px">fertig</span>':''}</b><span style="display:flex;gap:4px;align-items:center"><span class="bd-count">${vis.length}${vis.length!==cards.length?' / '+cards.length:''}</span><button class="tl-edit" data-coled="${c.id}" aria-label="Spalte ${esc(c.n)} bearbeiten" title="Spalte bearbeiten">✎</button></span></div>
       <div class="bd-list" data-list="${c.id}">${vis.map(bdCardHTML).join('')}</div>
@@ -2129,7 +2141,11 @@ function viewBoard(){
         :`<button type="button" class="bd-add" data-qa="${c.id}">+ Karte hinzufügen</button>`}
     </section>`}).join('')}</div></div>
   <p class="muted" style="font-size:12px;margin:0">Karten per Drag &amp; Drop verschieben oder anklicken, um sie zu bearbeiten. Aufgaben werden für alle angemeldeten Personen gemeinsam gespeichert.</p>
+  <details id="bdArchive" ${bdArchiveOpen?'open':''}><summary>Archiv (${archived.length})</summary>
+    <div class="bd-archive-list">${archived.length?archived.map(bdCardHTML).join(''):'<span class="muted">Keine archivierten Karten</span>'}</div>
+  </details>
   <div id="bdFormWrap"></div>`;
+  $('#bdArchive').ontoggle=e=>{bdArchiveOpen=e.currentTarget.open};
   if($('#bdImport'))$('#bdImport').onclick=importLocalBoard;
   $$('[data-bco]').forEach(b=>b.onclick=()=>{bdF.co=b.dataset.bco;viewBoard()});
   $('#bdWho').onchange=e=>{bdF.who=e.target.value;viewBoard()};
@@ -2144,6 +2160,20 @@ function viewBoard(){
   $$('[data-qf]').forEach(f=>f.onsubmit=e=>{e.preventDefault();const t=$('#bdQuickIn').value.trim();if(!t){bdQuick=null;viewBoard();return}
     const co=f.elements.company.value;
     board.cards.push({id:'k'+Date.now(),col:f.dataset.qf,t,d:'',co,who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]});saveBoard();viewBoard();const input=$('#bdQuickIn');input.form.elements.company.value=co;input.focus()});
+  $$('[data-card-check]').forEach(button=>button.onclick=()=>{
+    const card=board.cards.find(k=>k.id===button.dataset.cardCheck);
+    card.completed=!bdDone(card);
+    saveBoard(card.completed?'Karte als erledigt markiert':'Karte als offen markiert');
+    viewBoard();
+    $(`[data-card-check="${card.id}"]`)?.focus();
+  });
+  $$('[data-card-archive]').forEach(button=>button.onclick=()=>{
+    const card=board.cards.find(k=>k.id===button.dataset.cardArchive);
+    card.archived=!card.archived;
+    saveBoard(card.archived?'Karte archiviert':'Karte wiederhergestellt');
+    viewBoard();
+    $('#bdArchive summary').focus();
+  });
   $$('[data-card-delete]').forEach(button=>button.onclick=()=>{
     const k=board.cards.find(card=>card.id===button.dataset.cardDelete);
     if(k&&window.confirm('Karte „'+k.t+'“ löschen?')){
@@ -2153,7 +2183,7 @@ function viewBoard(){
   });
   $$('[data-card]').forEach(el=>{
     el.onclick=()=>openCard(el.dataset.card);
-    el.ondragstart=e=>{bdDrag=el.dataset.card;el.classList.add('dragging');try{e.dataTransfer.setData('text/plain',bdDrag);e.dataTransfer.effectAllowed='move'}catch(x){}};
+    if(el.draggable)el.ondragstart=e=>{bdDrag=el.dataset.card;el.classList.add('dragging');try{e.dataTransfer.setData('text/plain',bdDrag);e.dataTransfer.effectAllowed='move'}catch(x){}};
     el.ondragend=()=>{el.classList.remove('dragging');$$('.bd-col.over').forEach(c=>c.classList.remove('over'));$$('.bd-ph').forEach(p=>p.remove());bdDrag=null};
   });
   $$('.bd-col').forEach(col=>{
