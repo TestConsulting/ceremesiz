@@ -735,17 +735,26 @@ function sidebarLink(id,name,r,top=false){
   const entry=sidebarEntry('items',id,name);
   return `<a href="#${id}" class="${top?'top ':''}${r===id?'on ':''}${entry.beta?'beta':''}">${esc(entry.name)}${sidebarBadge(entry)}</a>`;
 }
+const navFoldKey='ch_nav_folded_v1:'+BOOT.user?.id;
+const savedNavFold=store.get(navFoldKey,[]);
+let navFolded=new Set(Array.isArray(savedNavFold)?savedNavFold:[]);
+function saveNavFold(groups){
+  navFolded=new Set(groups.filter(group=>!group.open).map(group=>group.dataset.navGroup));
+  store.set(navFoldKey,[...navFolded]);
+}
 function renderNav(r){
   const nav=$('#nav');nav.style.setProperty('--beta-color',sidebarSettings.color);
-  const folded=new Set([...nav.querySelectorAll('details[data-nav-group]:not([open])')].map(group=>group.dataset.navGroup));
+  const previous=[...nav.querySelectorAll('details[data-nav-group]')];
+  if(previous.length)saveNavFold(previous);
   nav.innerHTML=TOP_NAV.map(([id,name])=>sidebarLink(id,name,r,true)).join('')+NAV.map(g=>{
     const entry=sidebarEntry('groups',g.co,CO[g.co].n);
     const label=`<span class="dot" style="background:${CO[g.co].c}"></span>${esc(entry.name)}${sidebarBadge(entry)}`;
     const heading=`nav-grp-h ${entry.beta?'beta':''}`;
     const items=g.items.map(([id,name])=>id==="vertrieb"&&BOOT.salesPilot?`<span style="display:block;padding:6px 14px">Vertrieb</span><span style="display:block;padding-left:12px">${sidebarLink("vertrieb-master","Master Templates",r)}${sidebarLink("vertrieb-projekte","Projekte/Freigaben",r)}</span>`:sidebarLink(id,name,r)).join('');
-    if(['holding','tc','ppt'].includes(g.co))return `<details class="nav-grp-fold" data-nav-group="${g.co}" ${folded.has(g.co)?'':'open'}><summary class="${heading}">${label}<span class="nav-grp-arrow" aria-hidden="true">›</span></summary><div class="nav-grp">${items}</div></details>`;
-    return `<div class="nav-grp"><div class="${heading}">${label}</div>${items}</div>`;
+    return `<details class="nav-grp-fold" data-nav-group="${g.co}" ${navFolded.has(g.co)?'':'open'}><summary class="${heading}">${label}<span class="nav-grp-arrow" aria-hidden="true">›</span></summary><div class="nav-grp">${items}</div></details>`;
   }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a><a href="#settings-fibu" class="${r==='settings-fibu'?'on':''}" style="padding-left:30px">FiBu</a><a href="#settings-portals" class="${r==='settings-portals'?'on':''}" style="padding-left:30px">Lieferantenportale</a>${BOOT.salesPilot?`<span style="display:block;padding-left:12px">${sidebarLink("settings-vertrieb","Vertriebskonfig",r)}</span>`:""}`;
+  const groups=[...nav.querySelectorAll('details[data-nav-group]')];
+  groups.forEach(group=>group.ontoggle=()=>{if(group.isConnected)saveNavFold(groups);});
 }
 
 /* ---------------- Daten: Renditekalkulation ---------------- */
@@ -2008,6 +2017,7 @@ if(!board.people)board.people=JSON.parse(JSON.stringify(BD_PEOPLE_SEED));
 if(!board.cos)board.cos=JSON.parse(JSON.stringify(BD_COS_SEED));
 const bdCo=id=>board.cos.find(c=>c.id===id);
 const bdP=id=>board.people.find(p=>p.id===id);
+const bdDefaultCompany=()=>bdCo('tc')?.id||'';
 const coLbl=c=>c&&(c.n||'Firma')||'';
 const coFace=(c,h)=>c.img?`<img src="${c.img}" alt="${esc(coLbl(c))}" style="height:${h}px">`:esc(c.n);
 const saveBoard=()=>store.set('ch_board_v1',board);
@@ -2048,7 +2058,7 @@ function viewBoard(){
     return `<section class="bd-col" data-col="${c.id}" aria-label="Spalte ${esc(c.n)}">
       <div class="bd-col-h"><b>${esc(c.n)}${c.done?' <span class="pill good" style="font-size:10px;padding:0 6px">fertig</span>':''}</b><span style="display:flex;gap:4px;align-items:center"><span class="bd-count">${vis.length}${vis.length!==cards.length?' / '+cards.length:''}</span><button class="tl-edit" data-coled="${c.id}" aria-label="Spalte ${esc(c.n)} bearbeiten" title="Spalte bearbeiten">✎</button></span></div>
       <div class="bd-list" data-list="${c.id}">${vis.map(bdCardHTML).join('')}</div>
-      ${bdQuick===c.id?`<form class="bd-quick" data-qf="${c.id}"><div class="inp"><input id="bdQuickIn" placeholder="Titel der Karte, Enter zum Anlegen" aria-label="Neue Karte"></div><div class="actions"><button class="btn sm primary">Hinzufügen</button><button type="button" class="btn sm ghost" id="bdQuickX">Abbrechen</button><select name="company" class="btn sm bd-quick-company" aria-label="Firma für die neue Karte"><option value="">Keine Firma</option>${board.cos.map(co=>`<option value="${esc(co.id)}" ${co.id===(bdF.co!=="alle"?bdF.co:board.cos[0]?.id)?"selected":""}>${esc(coLbl(co))}</option>`).join("")}</select></div></form>`
+      ${bdQuick===c.id?`<form class="bd-quick" data-qf="${c.id}"><div class="inp"><input id="bdQuickIn" placeholder="Titel der Karte, Enter zum Anlegen" aria-label="Neue Karte"></div><div class="actions"><button class="btn sm primary">Hinzufügen</button><button type="button" class="btn sm ghost" id="bdQuickX">Abbrechen</button><select name="company" class="btn sm bd-quick-company" aria-label="Firma für die neue Karte"><option value="">Keine Firma</option>${board.cos.map(co=>`<option value="${esc(co.id)}" ${co.id===bdDefaultCompany()?"selected":""}>${esc(coLbl(co))}</option>`).join("")}</select></div></form>`
         :`<button type="button" class="bd-add" data-qa="${c.id}">+ Karte hinzufügen</button>`}
     </section>`}).join('')}</div></div>
   <p class="muted" style="font-size:12px;margin:0">Karten per Drag &amp; Drop verschieben oder anklicken, um sie zu bearbeiten. Im Prototyp lokal im Browser gespeichert.</p>
@@ -2101,7 +2111,7 @@ function bdDeleteCard(id){
 }
 function openCard(id,col){
   const k=id?board.cards.find(x=>x.id===id):null;
-  bdForm=k?{mode:'card',...JSON.parse(JSON.stringify(k))}:{mode:'card',id:null,col:col,t:'',d:'',co:bdF.co!=='alle'?bdF.co:(board.cos[0]?board.cos[0].id:''),who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]};
+  bdForm=k?{mode:'card',...JSON.parse(JSON.stringify(k))}:{mode:'card',id:null,col:col,t:'',d:'',co:bdDefaultCompany(),who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]};
   renderBdForm();
 }
 function renderBdForm(){
