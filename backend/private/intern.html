@@ -621,6 +621,9 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 .bd-card-check span{width:17px;height:17px;border:1px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:12px;line-height:1}
 .bd-card-check[aria-pressed="true"] span{background:#35751d;border-color:#35751d;color:white}
 .bd-card[draggable="false"]{cursor:pointer}
+.bd-attachment-drop{display:grid;gap:8px;padding:14px;border:2px dashed var(--line);border-radius:8px;background:var(--field)}
+.bd-attachment-drop.is-over{border-color:var(--good);background:var(--good-soft)}
+.bd-attachment-drop input{max-width:100%}
 .bd-attachment-list{margin:0;padding:0;list-style:none;display:grid;gap:5px}
 .bd-attachment-list li{display:flex;align-items:center;flex-wrap:wrap;gap:8px;overflow-wrap:anywhere}
 .bd-attachment-list:empty{display:none}
@@ -2228,6 +2231,7 @@ function mountBdAttachments(form){
     panel.querySelector('[data-attachment-status]').textContent=state.error||(state.busy?'Anhänge werden verarbeitet …':'');
     const input=panel.querySelector('input');
     input.disabled=state.busy;
+    bindDrop(panel.querySelector('[data-attachment-drop]'));
     const list=panel.querySelector('[data-attachment-list]');
     list.innerHTML=(state.files||[]).map(file=>`<li><a href="${url}/${encodeURIComponent(file.id)}" download>${esc(file.name)}</a>
       <span class="muted">${new Intl.NumberFormat('de-DE',{maximumFractionDigits:1}).format(file.size/1024)} KB</span>
@@ -2243,20 +2247,46 @@ function mountBdAttachments(form){
     input.onchange=()=>{
       const files=[...input.files];
       input.value='';
-      if(!files.length)return;
-      void run(async()=>{
-        const errors=[];
-        for(const file of files){
-          try{
-            if(file.size>10*1024*1024)throw new Error('Maximal 10 MB je Datei.');
-            const response=await request(url+'?'+new URLSearchParams({name:file.name}),{method:'POST',
-              headers:{...headers,'Content-Type':'application/octet-stream'},body:file});
-            (state.files??=[]).push(await response.json());
-          }catch(error){errors.push(file.name+' · '+error.message);}
-        }
-        state.error=errors.join(' ');
-      });
+      upload(files);
     };
+  }
+  function bindDrop(zone){
+    const hasFiles=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');
+    zone.ondragover=event=>{
+      if(!hasFiles(event))return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect=state.busy?'none':'copy';
+      zone.classList.toggle('is-over',!state.busy);
+    };
+    zone.ondragleave=event=>{
+      if(!zone.contains(event.relatedTarget))zone.classList.remove('is-over');
+    };
+    zone.ondrop=event=>{
+      event.preventDefault();
+      zone.classList.remove('is-over');
+      const files=Array.from(event.dataTransfer?.files||[]);
+      if(files.length&&state.busy){toast('Bitte warte, bis die Anhänge verarbeitet sind.');return;}
+      upload(files);
+    };
+    const overlay=zone.closest('.overlay');
+    const preventFileNavigation=event=>{if(hasFiles(event))event.preventDefault();};
+    overlay.ondragover=preventFileNavigation;
+    overlay.ondrop=preventFileNavigation;
+  }
+  function upload(files){
+    if(!files.length)return;
+    void run(async()=>{
+      const errors=[];
+      for(const file of files){
+        try{
+          if(file.size>10*1024*1024)throw new Error('Maximal 10 MB je Datei.');
+          const response=await request(url+'?'+new URLSearchParams({name:file.name}),{method:'POST',
+            headers:{...headers,'Content-Type':'application/octet-stream'},body:file});
+          (state.files??=[]).push(await response.json());
+        }catch(error){errors.push(file.name+' · '+error.message);}
+      }
+      state.error=errors.join(' ');
+    });
   }
   async function request(target,options){
     const response=await fetch(target,options);
@@ -2295,8 +2325,11 @@ function renderBdForm(){
       <div class="field full"><label for="bk_d">Beschreibung</label><div class="inp"><textarea id="bk_d" rows="3">${esc(f.d||'')}</textarea></div></div>
       <div class="field full" id="bdAttachments"><label>Anhänge</label>
         ${f.id?`<ul class="bd-attachment-list" data-attachment-list></ul>
-        <input type="file" multiple aria-label="Dateien hinzufügen"
-          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif">
+        <div class="bd-attachment-drop" data-attachment-drop>
+          <strong>Dateien hier ablegen</strong>
+          <input type="file" multiple aria-label="Dateien hinzufügen"
+            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif">
+        </div>
         <p class="muted" style="margin:0">PDF, Word und Bilder · bis zu 10 MB je Datei</p>
         <div role="status" data-attachment-status></div>`:'<p class="muted" style="margin:0">Speichere die Karte, um Dateien anzuhängen.</p>'}</div>
       <div class="field"><label for="bk_col">Spalte</label><div class="inp"><select id="bk_col">${board.cols.map(c=>`<option value="${c.id}" ${f.col===c.id?'selected':''}>${esc(c.n)}</option>`).join('')}</select></div></div>
