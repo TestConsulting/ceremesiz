@@ -105,6 +105,12 @@ textarea{resize:vertical}
 #side .wordmark{padding:0 6px 14px;border-bottom:1px solid var(--line)}
 .nav-grp{display:grid;gap:2px}
 .nav-grp-h{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--side-muted);padding:4px 10px;display:flex;align-items:center;gap:8px;font-weight:600}
+.nav-grp-fold > summary{cursor:pointer;list-style:none;border-radius:7px}
+.nav-grp-fold > summary::-webkit-details-marker{display:none}
+.nav-grp-fold > summary:hover{background:var(--field);color:var(--ink)}
+.nav-grp-arrow{margin-left:auto;font-size:15px;line-height:1}
+.nav-grp-fold[open] > summary .nav-grp-arrow{transform:rotate(90deg)}
+.nav-grp-fold .beta-badge + .nav-grp-arrow{margin-left:0}
 .nav a{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 26px;border-radius:7px;color:var(--ink);text-decoration:none;font-size:13.5px;opacity:.8}
 .nav a.top{padding-left:10px}
 .nav a:hover{background:var(--field);opacity:1}
@@ -731,10 +737,14 @@ function sidebarLink(id,name,r,top=false){
 }
 function renderNav(r){
   const nav=$('#nav');nav.style.setProperty('--beta-color',sidebarSettings.color);
+  const folded=new Set([...nav.querySelectorAll('details[data-nav-group]:not([open])')].map(group=>group.dataset.navGroup));
   nav.innerHTML=TOP_NAV.map(([id,name])=>sidebarLink(id,name,r,true)).join('')+NAV.map(g=>{
     const entry=sidebarEntry('groups',g.co,CO[g.co].n);
-    return `<div class="nav-grp"><div class="nav-grp-h ${entry.beta?'beta':''}"><span class="dot" style="background:${CO[g.co].c}"></span>${esc(entry.name)}${sidebarBadge(entry)}</div>
-    ${g.items.map(([id,name])=>id==="vertrieb"&&BOOT.salesPilot?`<span style="display:block;padding:6px 14px">Vertrieb</span><span style="display:block;padding-left:12px">${sidebarLink("vertrieb-master","Master Templates",r)}${sidebarLink("vertrieb-projekte","Projekte/Freigaben",r)}</span>`:sidebarLink(id,name,r)).join('')}</div>`;
+    const label=`<span class="dot" style="background:${CO[g.co].c}"></span>${esc(entry.name)}${sidebarBadge(entry)}`;
+    const heading=`nav-grp-h ${entry.beta?'beta':''}`;
+    const items=g.items.map(([id,name])=>id==="vertrieb"&&BOOT.salesPilot?`<span style="display:block;padding:6px 14px">Vertrieb</span><span style="display:block;padding-left:12px">${sidebarLink("vertrieb-master","Master Templates",r)}${sidebarLink("vertrieb-projekte","Projekte/Freigaben",r)}</span>`:sidebarLink(id,name,r)).join('');
+    if(['holding','tc','ppt'].includes(g.co))return `<details class="nav-grp-fold" data-nav-group="${g.co}" ${folded.has(g.co)?'':'open'}><summary class="${heading}">${label}<span class="nav-grp-arrow" aria-hidden="true">›</span></summary><div class="nav-grp">${items}</div></details>`;
+    return `<div class="nav-grp"><div class="${heading}">${label}</div>${items}</div>`;
   }).join('')+`<a class="top ${r==='settings'?'on':''}" href="#settings">Einstellungen</a><a href="#settings-fibu" class="${r==='settings-fibu'?'on':''}" style="padding-left:30px">FiBu</a><a href="#settings-portals" class="${r==='settings-portals'?'on':''}" style="padding-left:30px">Lieferantenportale</a>${BOOT.salesPilot?`<span style="display:block;padding-left:12px">${sidebarLink("settings-vertrieb","Vertriebskonfig",r)}</span>`:""}`;
 }
 
