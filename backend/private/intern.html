@@ -2023,6 +2023,11 @@ const coFace=(c,h)=>c.img?`<img src="${c.img}" alt="${esc(coLbl(c))}" style="hei
 const saveBoard=()=>store.set('ch_board_v1',board);
 let bdF={co:'alle',who:'alle',q:'',due:false},bdForm=null,bdQuick=null,bdDrag=null;
 const bdUse=(kind,id)=>board.cards.filter(k=>kind==='people'?k.who.includes(id):k.co===id).length;
+function bdDueDate(value){
+  const weekday=new Date(value+'T00:00:00Z').getUTCDay();
+  if(!Number.isFinite(weekday))return deDate(value);
+  return ['So','Mo','Di','Mi','Do','Fr','Sa'][weekday]+' '+deDate(value);
+}
 const bdDone=k=>{const c=board.cols.find(x=>x.id===k.col);return !!(c&&c.done)};
 const bdDueCls=k=>{if(!k.due||bdDone(k))return '';const t=todayIso();if(k.due<t)return 'late';const d=(new Date(k.due+'T12:00:00')-new Date(t+'T12:00:00'))/864e5;return d<=3?'soon':''};
 const bdOpenDue=()=>board.cards.filter(k=>!bdDone(k)&&k.due&&(new Date(k.due+'T12:00:00')-new Date(todayIso()+'T12:00:00'))/864e5<=7);
@@ -2038,7 +2043,7 @@ function bdCardHTML(k){
   return `<div class="bd-card-row" data-card-row="${esc(k.id)}"><button type="button" class="bd-card ${done?'done':''}" draggable="true" data-card="${esc(k.id)}" style="--co:${co?co.c:'var(--line)'}" aria-label="${esc(k.t)} öffnen">
     <b>${esc(k.t)}</b>
     <div class="bd-meta">${co?`<span class="bd-tag ${co.img?'logo':''}" title="${esc(coLbl(co))}">${coFace(co,16)}</span>`:''}<span class="bd-prio" style="background:${p[1]}" title="Priorität ${p[0]}"></span>
-      ${k.due?`<span class="bd-due ${dc}" title="Fällig">${dc==='late'?'überfällig · ':''}${deDate(k.due)}</span>`:''}
+      ${k.due?`<span class="bd-due ${dc}" title="Fällig">${dc==='late'?'überfällig · ':''}${esc(bdDueDate(k.due))}</span>`:''}
       ${k.cl.length?`<span class="bd-cl ${okN===k.cl.length?'full':''}">☑ ${okN}/${k.cl.length}</span>`:''}
       ${k.demo?'<span class="bd-cl">Beispiel</span>':''}
       <span class="bd-av">${k.who.map(id=>{const pp=bdP(id);return pp?`<span style="background:${pp.c}" title="${esc(pp.n)}">${pp.img?`<img src="${pp.img}" alt="">`:esc(iniOf(pp.n))}</span>`:''}).join('')}</span></div></button><button type="button" class="bd-card-delete" data-card-delete="${esc(k.id)}" aria-label="${esc(k.t)} löschen" title="Karte löschen">×</button></div>`;
