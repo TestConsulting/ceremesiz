@@ -2328,9 +2328,9 @@ function renderBdForm(){
         <div class="bd-attachment-drop" data-attachment-drop>
           <strong>Dateien hier ablegen</strong>
           <input type="file" multiple aria-label="Dateien hinzufügen"
-            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif">
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.xlsb,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif">
         </div>
-        <p class="muted" style="margin:0">PDF, Word und Bilder · bis zu 10 MB je Datei</p>
+        <p class="muted" style="margin:0">PDF, Word, Excel und Bilder · bis zu 10 MB je Datei</p>
         <div role="status" data-attachment-status></div>`:'<p class="muted" style="margin:0">Speichere die Karte, um Dateien anzuhängen.</p>'}</div>
       <div class="field"><label for="bk_col">Spalte</label><div class="inp"><select id="bk_col">${board.cols.map(c=>`<option value="${c.id}" ${f.col===c.id?'selected':''}>${esc(c.n)}</option>`).join('')}</select></div></div>
       <div class="field full"><label>Firma</label><input type="hidden" id="bk_co" value="${esc(f.co||'')}"><div class="bd-copick" role="radiogroup" aria-label="Firma wählen"><button type="button" role="radio" aria-checked="${!f.co}" class="${!f.co?'on':''}" data-pick="">keine</button>${board.cos.map(c=>`<button type="button" role="radio" aria-checked="${f.co===c.id}" class="${f.co===c.id?'on':''} ${c.img?'logo':''}" data-pick="${c.id}" title="${esc(coLbl(c))}" aria-label="${esc(coLbl(c))}" style="--co:${c.c}">${coFace(c,26)}</button>`).join('')}</div></div>

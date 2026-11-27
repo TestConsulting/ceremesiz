@@ -122,7 +122,15 @@ test('Angemeldete Konten teilen sich Vertrieb und Aufgabenboard', async () => {
       'Content-Type':'application/json','X-CSRF-Token':other.csrf},body:'{}'});
     assert.equal((await deleteFile()).status,204);
     assert.equal((await deleteFile()).status,404);
-    assert.equal((await uploadFile(pilot,'Zweites Bild.png')).status,201);
+    for(const extension of ['xls','xlsx','xlsm','xlsb']){
+      const excel=await uploadFile(pilot,'Planung.'+extension);
+      assert.equal(excel.status,201);
+      const saved=await excel.json();
+      const downloaded=await fetch(files+'/'+saved.id,{headers:{cookie:other.cookie}});
+      assert.equal(downloaded.status,200);
+      assert.match(downloaded.headers.get('content-disposition'),new RegExp('Planung\\.'+extension));
+      assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),pdf);
+    }
     assert.deepEqual(await (await putBoard(other,3,{...updated,cards:[]})).json(),{revision:4});
     assert.equal(db.prepare('SELECT count(*) AS total FROM task_board_attachment').get().total,0);
     const fibu=await fetch(origin+'/api/fibu/companies',{headers:{cookie:pilot.cookie}});

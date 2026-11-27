@@ -3,7 +3,7 @@ const {randomUUID}=require('node:crypto');
 const {requireAuthApi}=require('../middleware/auth');
 const {requireCsrf,requireSameOriginJson,requireSameOrigin}=require('../middleware/csrf');
 
-const fileTypes=new Set('pdf doc docx png jpg jpeg gif webp bmp tif tiff heic heif avif'.split(' '));
+const fileTypes=new Set('pdf doc docx xls xlsx xlsm xlsb png jpg jpeg gif webp bmp tif tiff heic heif avif'.split(' '));
 const id=value=>typeof value==='string'&&/^[\w-]{1,64}$/.test(value);
 const text=(value,max)=>typeof value==='string'&&value.length<=max;
 const color=value=>typeof value==='string'&&/^#[\da-f]{6}$/i.test(value);
