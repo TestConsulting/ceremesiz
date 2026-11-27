@@ -14,9 +14,9 @@ function requireCsrf(req, res, next) {
 }
 
 // Login-CSRF verhindern: nur JSON-Anfragen von der eigenen Seite zulassen.
-function requireSameOriginJson(allowedOrigins) {
+function requireSameOrigin(allowedOrigins,contentType,error) {
   return (req, res, next) => {
-    if (!req.is('application/json')) return res.status(415).json({ error: 'Nur JSON erlaubt' });
+    if (!req.is(contentType)) return res.status(415).json({ error });
     const origin = req.get('Origin');
     if (origin) {
       const self = `${req.protocol}://${req.get('host')}`;
@@ -28,4 +28,6 @@ function requireSameOriginJson(allowedOrigins) {
   };
 }
 
-module.exports = { requireCsrf, requireSameOriginJson };
+const requireSameOriginJson=allowedOrigins=>requireSameOrigin(allowedOrigins,'application/json','Nur JSON erlaubt');
+
+module.exports = { requireCsrf, requireSameOriginJson, requireSameOrigin };

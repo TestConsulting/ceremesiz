@@ -621,6 +621,9 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 .bd-card-check span{width:17px;height:17px;border:1px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:12px;line-height:1}
 .bd-card-check[aria-pressed="true"] span{background:#35751d;border-color:#35751d;color:white}
 .bd-card[draggable="false"]{cursor:pointer}
+.bd-attachment-list{margin:0;padding:0;list-style:none;display:grid;gap:5px}
+.bd-attachment-list li{display:flex;align-items:center;flex-wrap:wrap;gap:8px;overflow-wrap:anywhere}
+.bd-attachment-list:empty{display:none}
 .bd-archive-list{margin-top:10px;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr))}
 .bd-card.done b{text-decoration:line-through;color:var(--muted)}
 .bd-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -2212,6 +2215,69 @@ function openCard(id,col){
   bdForm=k?{mode:'card',...JSON.parse(JSON.stringify(k))}:{mode:'card',id:null,col:col,t:'',d:'',co:bdDefaultCompany(),who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]};
   renderBdForm();
 }
+const bdAttachmentStates=new WeakMap();
+function mountBdAttachments(form){
+  if(!form.id)return;
+  const url=boardUrl+'/cards/'+encodeURIComponent(form.id)+'/attachments';
+  const state=bdAttachmentStates.get(form)||{files:null,error:'',busy:false};
+  bdAttachmentStates.set(form,state);
+  const headers={'X-CSRF-Token':BOOT.csrfToken};
+  function draw(){
+    const panel=bdForm===form?$('#bdAttachments'):null;
+    if(!panel)return;
+    panel.querySelector('[data-attachment-status]').textContent=state.error||(state.busy?'Anhänge werden verarbeitet …':'');
+    const input=panel.querySelector('input');
+    input.disabled=state.busy;
+    const list=panel.querySelector('[data-attachment-list]');
+    list.innerHTML=(state.files||[]).map(file=>`<li><a href="${url}/${encodeURIComponent(file.id)}" download>${esc(file.name)}</a>
+      <span class="muted">${new Intl.NumberFormat('de-DE',{maximumFractionDigits:1}).format(file.size/1024)} KB</span>
+      <button class="btn sm ghost" type="button" data-remove-attachment="${esc(file.id)}" ${state.busy?'disabled':''} aria-label="${esc(file.name)} entfernen">Entfernen</button></li>`).join('');
+    list.querySelectorAll('button').forEach(button=>button.onclick=()=>{
+      const file=state.files.find(item=>item.id===button.dataset.removeAttachment);
+      if(!confirm('Anhang „'+file.name+'“ entfernen?'))return;
+      void run(async()=>{
+        await request(url+'/'+encodeURIComponent(file.id),{method:'DELETE',headers:{...headers,'Content-Type':'application/json'},body:'{}'});
+        state.files=state.files.filter(item=>item!==file);
+      });
+    });
+    input.onchange=()=>{
+      const files=[...input.files];
+      input.value='';
+      if(!files.length)return;
+      void run(async()=>{
+        const errors=[];
+        for(const file of files){
+          try{
+            if(file.size>10*1024*1024)throw new Error('Maximal 10 MB je Datei.');
+            const response=await request(url+'?'+new URLSearchParams({name:file.name}),{method:'POST',
+              headers:{...headers,'Content-Type':'application/octet-stream'},body:file});
+            (state.files??=[]).push(await response.json());
+          }catch(error){errors.push(file.name+' · '+error.message);}
+        }
+        state.error=errors.join(' ');
+      });
+    };
+  }
+  async function request(target,options){
+    const response=await fetch(target,options);
+    if(!response.ok){
+      const body=await response.json().catch(()=>null);
+      throw new Error(body?.error||(response.status===413?'Die Datei ist zu groß.':'Anhang konnte nicht verarbeitet werden.'));
+    }
+    return response;
+  }
+  async function run(action){
+    if(state.busy)return;
+    state.busy=true;
+    state.error='';
+    draw();
+    try{await action();}
+    catch(error){state.error=error.message;}
+    finally{state.busy=false;draw();}
+  }
+  draw();
+  if(!state.files&&!state.error&&!state.busy)void run(async()=>{state.files=await (await request(url)).json();});
+}
 function renderBdForm(){
   const w=$('#bdFormWrap');if(!w)return;const f=bdForm;if(!f){w.innerHTML='';return}
   const delBtn=(lbl,can,why)=>f.id?(f._c?`<span class="actions" style="align-items:center"><span style="font-size:12.5px;color:var(--bad)">${lbl} löschen?</span><button type="button" class="btn sm" id="bdDelOk">Ja</button><button type="button" class="btn sm ghost" id="bdDelNo">Nein</button></span>`:`<button type="button" class="btn ghost" id="bdDel" style="color:var(--bad)" ${can?'':`disabled title="${why}"`}>Löschen</button>`):'<span></span>';
@@ -2227,6 +2293,12 @@ function renderBdForm(){
   else{
     body=`<div class="field full is-req"><label for="bk_t">Titel<span class="req">*</span></label><div class="inp"><input id="bk_t" value="${esc(f.t)}"></div></div>
       <div class="field full"><label for="bk_d">Beschreibung</label><div class="inp"><textarea id="bk_d" rows="3">${esc(f.d||'')}</textarea></div></div>
+      <div class="field full" id="bdAttachments"><label>Anhänge</label>
+        ${f.id?`<ul class="bd-attachment-list" data-attachment-list></ul>
+        <input type="file" multiple aria-label="Dateien hinzufügen"
+          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif">
+        <p class="muted" style="margin:0">PDF, Word und Bilder · bis zu 10 MB je Datei</p>
+        <div role="status" data-attachment-status></div>`:'<p class="muted" style="margin:0">Speichere die Karte, um Dateien anzuhängen.</p>'}</div>
       <div class="field"><label for="bk_col">Spalte</label><div class="inp"><select id="bk_col">${board.cols.map(c=>`<option value="${c.id}" ${f.col===c.id?'selected':''}>${esc(c.n)}</option>`).join('')}</select></div></div>
       <div class="field full"><label>Firma</label><input type="hidden" id="bk_co" value="${esc(f.co||'')}"><div class="bd-copick" role="radiogroup" aria-label="Firma wählen"><button type="button" role="radio" aria-checked="${!f.co}" class="${!f.co?'on':''}" data-pick="">keine</button>${board.cos.map(c=>`<button type="button" role="radio" aria-checked="${f.co===c.id}" class="${f.co===c.id?'on':''} ${c.img?'logo':''}" data-pick="${c.id}" title="${esc(coLbl(c))}" aria-label="${esc(coLbl(c))}" style="--co:${c.c}">${coFace(c,26)}</button>`).join('')}</div></div>
       <div class="field"><label for="bk_p">Priorität</label><div class="inp"><select id="bk_p">${Object.entries(BD_PRIO).map(([k,v])=>`<option value="${k}" ${f.prio===k?'selected':''}>${v[0]}</option>`).join('')}</select></div></div>
@@ -2258,7 +2330,7 @@ function renderBdForm(){
   $$('[data-pick]').forEach(b=>b.onclick=()=>{$('#bk_co').value=b.dataset.pick;$$('[data-pick]').forEach(x=>{const on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-checked',on)})});
   const ca=$('#bkClAdd');if(ca)ca.onclick=()=>{read();f.cl.push({t:'',ok:0});renderBdForm();const l=$$('[data-clt]');l[l.length-1].focus()};
   $$('[data-clrm]').forEach(b=>b.onclick=()=>{read();f.cl.splice(+b.dataset.clrm,1);renderBdForm()});
-  $('#bdF').onsubmit=e=>{e.preventDefault();read();
+  $('#bdF').onsubmit=async e=>{e.preventDefault();read();
     if(f.mode==='set'){const clean=l=>l.filter(x=>x.n.trim()||x.img).map(x=>({id:x.id,n:x.n.trim(),c:x.c,...(x.img?{img:x.img}:{})}));
       board.people=clean(f.people);board.cos=clean(f.cos);const pIds=board.people.map(p=>p.id),cIds=board.cos.map(c=>c.id);
       board.cards.forEach(k=>{k.who=k.who.filter(id=>pIds.includes(id));if(k.co&&!cIds.includes(k.co))k.co=''});
@@ -2269,9 +2341,13 @@ function renderBdForm(){
       saveBoard('Spalte gespeichert');bdForm=null;viewBoard();return}
     if(!f.t.trim()){$('#bk_t').closest('.field').classList.add('missing');toast('Bitte einen Titel eingeben');return}
     const {mode,_c,demo,...k}=f;k.t=k.t.trim();k.cl=k.cl.filter(x=>x.t.trim());
+    const isNew=!k.id;
     if(k.id){const i=board.cards.findIndex(x=>x.id===k.id),oldCol=board.cards[i].col;board.cards[i]=k;if(oldCol!==k.col){board.cards.splice(i,1);let last=-1;board.cards.forEach((x,ix)=>{if(x.col===k.col)last=ix});board.cards.splice(last+1,0,k)}}
     else{k.id='k'+Date.now();let last=-1;board.cards.forEach((x,ix)=>{if(x.col===k.col)last=ix});board.cards.splice(last+1,0,k)}
-    saveBoard('Karte gespeichert');bdForm=null;viewBoard()};
+    const saved=saveBoard('Karte gespeichert');bdForm=null;viewBoard();
+    if(isNew&&await saved&&boardActive()&&!bdForm)openCard(k.id);
+  };
+  if(f.mode==='card')mountBdAttachments(f);
   const first=$('#bdF input');if(first)first.focus();
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&bdForm){bdForm=null;renderBdForm()}});

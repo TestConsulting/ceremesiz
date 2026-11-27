@@ -101,6 +101,30 @@ test('Angemeldete Konten teilen sich Vertrieb und Aufgabenboard', async () => {
     updated.cards[0].archived=false;
     assert.deepEqual(await (await putBoard(pilot,2,updated)).json(),{revision:3});
     assert.deepEqual(await readBoard(other),{revision:3,board:updated});
+    const files=boardUrl+'/cards/ticket1/attachments';
+    const pdf=Buffer.concat([Buffer.from('%PDF-1.7\n'),Buffer.alloc(2*1024*1024)]);
+    const uploadFile=(user,name,csrf=user.csrf,source=origin)=>fetch(files+'?'+new URLSearchParams({name}),{method:'POST',
+      headers:{cookie:user.cookie,origin:source,'Content-Type':'application/octet-stream','X-CSRF-Token':csrf},body:pdf});
+    assert.equal((await fetch(files)).status,401);
+    assert.equal((await uploadFile(pilot,'Beleg.pdf','')).status,403);
+    assert.equal((await uploadFile(pilot,'Beleg.pdf',pilot.csrf,'https://foreign.example')).status,403);
+    assert.equal((await uploadFile(pilot,'Beleg.html')).status,400);
+    const created=await uploadFile(pilot,'Beleg März.pdf');
+    assert.equal(created.status,201);
+    const file=await created.json();
+    assert.deepEqual(await (await fetch(files,{headers:{cookie:other.cookie}})).json(),[file]);
+    assert.equal((await fetch(files+'/'+file.id)).status,401);
+    const received=await fetch(files+'/'+file.id,{headers:{cookie:other.cookie}});
+    assert.equal(received.headers.get('content-type'),'application/octet-stream');
+    assert.match(received.headers.get('content-disposition'),/^attachment;/);
+    assert.deepEqual(Buffer.from(await received.arrayBuffer()),pdf);
+    const deleteFile=()=>fetch(files+'/'+file.id,{method:'DELETE',headers:{cookie:other.cookie,origin,
+      'Content-Type':'application/json','X-CSRF-Token':other.csrf},body:'{}'});
+    assert.equal((await deleteFile()).status,204);
+    assert.equal((await deleteFile()).status,404);
+    assert.equal((await uploadFile(pilot,'Zweites Bild.png')).status,201);
+    assert.deepEqual(await (await putBoard(other,3,{...updated,cards:[]})).json(),{revision:4});
+    assert.equal(db.prepare('SELECT count(*) AS total FROM task_board_attachment').get().total,0);
     const fibu=await fetch(origin+'/api/fibu/companies',{headers:{cookie:pilot.cookie}});
     assert.equal(fibu.status,200);
   }finally{
