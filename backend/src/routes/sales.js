@@ -27,7 +27,6 @@ module.exports = function salesRoutes({ db, allowedOrigins, access }) {
   router.use(requireAuthApi,(req,res,next) => {
     res.set('Cache-Control','no-store');
     req.salesAccess=access(req.user.email);
-    if (!req.salesAccess.view) return res.status(403).json({error:'Kein Zugriff auf den Vertriebspilot.'});
     if (req.method==='POST' && !req.salesAccess.edit) return res.status(403).json({error:'Der Vertriebspilot ist für dieses Konto schreibgeschützt.'});
     next();
   });

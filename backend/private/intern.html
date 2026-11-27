@@ -887,7 +887,7 @@ if(!emps){
 }
 
 /* ---------------- Routing ---------------- */
-const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:viewBoard,portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:()=>BOOT.salesPilot?viewSales("projects"):viewVertrieb(),"vertrieb-master":()=>viewSales("employees"),"vertrieb-projekte":()=>viewSales("projects"),"settings-vertrieb":()=>viewSales("settings"),marketing:viewMarketing,ppt:viewPPT,settings:viewSettings,'settings-portals':()=>viewFibuPortals(),'settings-fibu':()=>viewFibuSettings()};
+const ROUTES={'fibu-tc':()=>viewFibuHome('tc'),'fibu-immo':()=>viewFibuHome('immo'),'fibu-holding':()=>viewFibuHome('holding'),board:()=>{viewBoard();void refreshBoard()},portfolio:viewPortfolio,konto:viewKonto,dashboard:viewDashboard,holding:viewHolding,rente:viewRente,rendite:viewRendite,vertrieb:()=>BOOT.salesPilot?viewSales("projects"):viewVertrieb(),"vertrieb-master":()=>viewSales("employees"),"vertrieb-projekte":()=>viewSales("projects"),"settings-vertrieb":()=>viewSales("settings"),marketing:viewMarketing,ppt:viewPPT,settings:viewSettings,'settings-portals':()=>viewFibuPortals(),'settings-fibu':()=>viewFibuSettings()};
 function route(){
   const h=curRoute||'dashboard';
   if(!auth.get()){location.replace('/#login');return}
@@ -2005,22 +2005,84 @@ const BD_PEOPLE_SEED=[{id:'taner',n:'Taner Ceremesiz',c:'#00873a'},{id:'soner',n
 const BD_COS_SEED=[{id:'holding',n:'Holding',c:'#00873a'},{id:'tc',n:'TestConsulting',c:'#2b5c9e'},{id:'immo',n:'AC Immo',c:'#a0702a'},{id:'ppt',n:'ProPersonalTeam',c:'#cc6a22'}];
 const iniOf=n=>String(n||'?').trim().split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase()||'?';
 const BD_PRIO={hoch:['Hoch','var(--bad)'],mittel:['Mittel','var(--warn)'],niedrig:['Niedrig','var(--muted)']};
-const BD_SEED={cols:[{id:'c1',n:'Offen'},{id:'c2',n:'In Arbeit'},{id:'c3',n:'Warten auf Rückmeldung'},{id:'c4',n:'Erledigt',done:1}],cards:[
- {id:'k2',col:'c2',t:'Kalkulation Indestraße prüfen',d:'Instandhaltung, Verwaltung und Gewerbesteuer ergänzen.',co:'immo',who:['taner'],due:'2026-10-15',prio:'hoch',cl:[{t:'Grundstücksanteil klären',ok:1},{t:'Steuerberater fragen',ok:0}],demo:1},
- {id:'k1',col:'c1',t:'Immobilienwert Stolberg & Reichsweg erfassen',d:'Aktuelle Bewertung im Portfolio eintragen.',co:'immo',who:['taner','soner'],due:'2026-10-31',prio:'mittel',cl:[{t:'Bewertung Stolberg anfragen',ok:0},{t:'Wert Reichsweg schätzen',ok:0}],demo:1},
- {id:'k3',col:'c1',t:'Projekt für Jonas Weber finden',d:'Bench – CV auf passende Ausschreibungen anpassen.',co:'tc',who:['taner'],due:'2026-10-20',prio:'hoch',cl:[],demo:1},
- {id:'k5',col:'c1',t:'Personalfragebogen online stellen',d:'',co:'ppt',who:['meltem'],due:'2026-11-15',prio:'mittel',cl:[],demo:1},
- {id:'k4',col:'c3',t:'Logos TestConsulting, AC Immo, PPT hochladen',d:'Im Brand-Kit unter Marketing.',co:'holding',who:['soner'],due:'',prio:'niedrig',cl:[],demo:1},
- {id:'k6',col:'c4',t:'Kontostände 01.08.2026 erfassen',d:'',co:'holding',who:['taner'],due:'2026-08-05',prio:'mittel',cl:[],demo:1}]};
-let board=store.get('ch_board_v1',null)||JSON.parse(JSON.stringify(BD_SEED));
-if(!board.people)board.people=JSON.parse(JSON.stringify(BD_PEOPLE_SEED));
-if(!board.cos)board.cos=JSON.parse(JSON.stringify(BD_COS_SEED));
+const BD_SEED={cols:[{id:'c1',n:'Offen'},{id:'c2',n:'In Arbeit'},{id:'c3',n:'Warten auf Rückmeldung'},{id:'c4',n:'Erledigt',done:1}],cards:[],people:BD_PEOPLE_SEED,cos:BD_COS_SEED};
+const legacyBoard=store.get('ch_board_v1',null);
+let confirmedBoard=BOOT.taskBoard||{revision:0,board:null};
+let board=structuredClone(confirmedBoard.board||BD_SEED);
+let boardQueue=Promise.resolve(),boardGeneration=0,boardPending=0;
 const bdCo=id=>board.cos.find(c=>c.id===id);
 const bdP=id=>board.people.find(p=>p.id===id);
 const bdDefaultCompany=()=>bdCo('tc')?.id||'';
 const coLbl=c=>c&&(c.n||'Firma')||'';
 const coFace=(c,h)=>c.img?`<img src="${c.img}" alt="${esc(coLbl(c))}" style="height:${h}px">`:esc(c.n);
-const saveBoard=()=>store.set('ch_board_v1',board);
+const boardUrl='/api/task-board';
+const boardActive=()=>location.hash==='#board';
+function applySharedBoard(result){
+  confirmedBoard=result;
+  board=structuredClone(result.board||BD_SEED);
+  if(!bdCo(bdF.co))bdF.co='alle';
+  if(!bdP(bdF.who))bdF.who='alle';
+  if(!board.cols.some(c=>c.id===bdQuick))bdQuick=null;
+}
+const canRefreshBoard=()=>boardActive()&&!document.hidden&&!boardPending&&!bdForm&&!bdQuick&&!bdDrag&&
+  document.activeElement?.id!=='bdQ';
+async function refreshBoard(){
+  if(!canRefreshBoard())return;
+  const revision=confirmedBoard.revision;
+  try{
+    const response=await fetch(boardUrl);
+    if(!response.ok)return;
+    const result=await response.json();
+    if(canRefreshBoard()&&revision===confirmedBoard.revision&&result.revision!==revision){
+      applySharedBoard(result);
+      viewBoard();
+    }
+  }catch{/* Beim nächsten Abruf erneut versuchen. */}
+}
+function saveBoard(message){
+  const snapshot=structuredClone(board),generation=boardGeneration;
+  boardPending++;
+  const save=async()=>{
+    try{
+      if(generation!==boardGeneration)return false;
+      const response=await fetch(boardUrl,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':BOOT.csrfToken},
+        body:JSON.stringify({revision:confirmedBoard.revision,board:snapshot})});
+      const result=await response.json();
+      if(response.status===409)confirmedBoard={revision:result.revision,board:result.board};
+      if(!response.ok)throw new Error(response.status===409?'Das Board wurde inzwischen geändert. Bitte wiederhole deine Änderung.':result.error);
+      confirmedBoard={revision:result.revision,board:snapshot};
+      if(message)toast(message);
+      return true;
+    }catch(error){
+      boardGeneration++;
+      applySharedBoard(confirmedBoard);
+      bdForm=null;
+      if(boardActive())viewBoard();
+      toast('Änderung nicht gespeichert. '+(error.message||'Bitte erneut versuchen.'));
+      return false;
+    }finally{boardPending--;}
+  };
+  boardQueue=boardQueue.then(save);
+  return boardQueue;
+}
+async function importLocalBoard(){
+  if(!window.confirm('Lokale Aufgaben aus diesem Browser zum gemeinsamen Board hinzufügen? Beispielkarten werden übersprungen.'))return;
+  const known=new Set(board.cards.map(k=>k.id));
+  const cards=legacyBoard.cards.filter(k=>!k.demo&&!known.has(k.id));
+  if(!cards.length){toast('Keine zusätzlichen lokalen Aufgaben gefunden');return;}
+  for(const group of ['cols','people','cos']){
+    for(const item of legacyBoard[group]||BD_SEED[group]){
+      if(!board[group].some(current=>current.id===item.id))board[group].push(structuredClone(item));
+    }
+  }
+  const columns=new Set(board.cols.map(c=>c.id)),people=new Set(board.people.map(p=>p.id)),companies=new Set(board.cos.map(c=>c.id));
+  board.cards.push(...cards.map(card=>({...structuredClone(card),col:columns.has(card.col)?card.col:board.cols[0].id,
+    co:companies.has(card.co)?card.co:'',who:(card.who||[]).filter(id=>people.has(id)),cl:card.cl||[],d:card.d||''})));
+  const saved=await saveBoard('Lokale Aufgaben übernommen');
+  if(saved)store.set('ch_board_imported_v1',true);
+  if(boardActive())viewBoard();
+}
+setInterval(refreshBoard,15000);
 let bdF={co:'alle',who:'alle',q:'',due:false},bdForm=null,bdQuick=null,bdDrag=null;
 const bdUse=(kind,id)=>board.cards.filter(k=>kind==='people'?k.who.includes(id):k.co===id).length;
 function bdDueDate(value){
@@ -2050,7 +2112,7 @@ function bdCardHTML(k){
 }
 function viewBoard(){
   const open=board.cards.filter(k=>!bdDone(k)).length,late=board.cards.filter(k=>bdDueCls(k)==='late').length;
-  $('#main').innerHTML=head(null,'Aufgaben','Aufgaben-Board',`<button class="btn" id="bdSet">Personen &amp; Firmen</button><button class="btn" id="bdAddCol">+ Spalte</button><button class="btn primary" id="bdAddCard">+ Karte</button>`)+`
+  $('#main').innerHTML=head(null,'Aufgaben','Aufgaben-Board',`${legacyBoard?.cards?.some(k=>!k.demo)&&!store.get('ch_board_imported_v1',false)?'<button class="btn" id="bdImport">Lokale Aufgaben übernehmen</button>':''}<button class="btn" id="bdSet">Personen &amp; Firmen</button><button class="btn" id="bdAddCol">+ Spalte</button><button class="btn primary" id="bdAddCard">+ Karte</button>`)+`
   <div class="bd-bar">
     <div class="mat-chips"><button type="button" class="mat-chip bd-chip ${bdF.co==='alle'?'on':''}" data-bco="alle">Alle</button>${board.cos.map(c=>`<button type="button" class="mat-chip bd-chip ${c.img?'logo':''} ${bdF.co===c.id?'on':''}" data-bco="${c.id}" title="${esc(coLbl(c))}" aria-label="Filter ${esc(coLbl(c))}">${coFace(c,20)}</button>`).join('')}</div>
     <div class="actions" style="align-items:center">
@@ -2066,8 +2128,9 @@ function viewBoard(){
       ${bdQuick===c.id?`<form class="bd-quick" data-qf="${c.id}"><div class="inp"><input id="bdQuickIn" placeholder="Titel der Karte, Enter zum Anlegen" aria-label="Neue Karte"></div><div class="actions"><button class="btn sm primary">Hinzufügen</button><button type="button" class="btn sm ghost" id="bdQuickX">Abbrechen</button><select name="company" class="btn sm bd-quick-company" aria-label="Firma für die neue Karte"><option value="">Keine Firma</option>${board.cos.map(co=>`<option value="${esc(co.id)}" ${co.id===bdDefaultCompany()?"selected":""}>${esc(coLbl(co))}</option>`).join("")}</select></div></form>`
         :`<button type="button" class="bd-add" data-qa="${c.id}">+ Karte hinzufügen</button>`}
     </section>`}).join('')}</div></div>
-  <p class="muted" style="font-size:12px;margin:0">Karten per Drag &amp; Drop verschieben oder anklicken, um sie zu bearbeiten. Im Prototyp lokal im Browser gespeichert.</p>
+  <p class="muted" style="font-size:12px;margin:0">Karten per Drag &amp; Drop verschieben oder anklicken, um sie zu bearbeiten. Aufgaben werden für alle angemeldeten Personen gemeinsam gespeichert.</p>
   <div id="bdFormWrap"></div>`;
+  if($('#bdImport'))$('#bdImport').onclick=importLocalBoard;
   $$('[data-bco]').forEach(b=>b.onclick=()=>{bdF.co=b.dataset.bco;viewBoard()});
   $('#bdWho').onchange=e=>{bdF.who=e.target.value;viewBoard()};
   $('#bdDue').onchange=e=>{bdF.due=e.target.checked;viewBoard()};
@@ -2112,7 +2175,7 @@ function bdMove(id,colId,beforeId){
 }
 function bdDeleteCard(id){
   board.cards=board.cards.filter(k=>k.id!==id);
-  saveBoard();bdForm=null;viewBoard();toast('Karte gelöscht');
+  saveBoard('Karte gelöscht');bdForm=null;viewBoard();
 }
 function openCard(id,col){
   const k=id?board.cards.find(x=>x.id===id):null;
@@ -2154,7 +2217,7 @@ function renderBdForm(){
   $('#bdX').onclick=close;$('#bdCancel').onclick=close;$('#bdOv').onclick=e=>{if(e.target.id==='bdOv')close()};
   const d=$('#bdDel');if(d)d.onclick=()=>{read();f._c=true;renderBdForm()};
   const dn=$('#bdDelNo');if(dn)dn.onclick=()=>{read();f._c=false;renderBdForm()};
-  const dk=$('#bdDelOk');if(dk)dk.onclick=()=>{if(f.mode!=='col')return bdDeleteCard(f.id);board.cols=board.cols.filter(c=>c.id!==f.id);saveBoard();bdForm=null;viewBoard();toast('Spalte gelöscht')};
+  const dk=$('#bdDelOk');if(dk)dk.onclick=()=>{if(f.mode!=='col')return bdDeleteCard(f.id);board.cols=board.cols.filter(c=>c.id!==f.id);saveBoard('Spalte gelöscht');bdForm=null;viewBoard()};
   $$('[data-simg]').forEach(inp=>inp.onchange=()=>{const file=inp.files[0];if(!file)return;read();readImg(file,inp.dataset.simg==='people'?160:320,u=>{f[inp.dataset.simg][+inp.dataset.i].img=u;renderBdForm()})});
   $$('[data-simgrm]').forEach(b=>b.onclick=()=>{read();delete f[b.dataset.simgrm][+b.dataset.i].img;renderBdForm()});
   $$('[data-sw]').forEach(b=>b.onclick=()=>{read();f[b.dataset.sw][+b.dataset.i].c=b.dataset.c;renderBdForm()});
@@ -2170,15 +2233,15 @@ function renderBdForm(){
       board.people=clean(f.people);board.cos=clean(f.cos);const pIds=board.people.map(p=>p.id),cIds=board.cos.map(c=>c.id);
       board.cards.forEach(k=>{k.who=k.who.filter(id=>pIds.includes(id));if(k.co&&!cIds.includes(k.co))k.co=''});
       if(bdF.co!=='alle'&&!cIds.includes(bdF.co))bdF.co='alle';if(bdF.who!=='alle'&&!pIds.includes(bdF.who))bdF.who='alle';
-      saveBoard();bdForm=null;viewBoard();toast('Personen & Firmen gespeichert');return}
+      saveBoard('Personen & Firmen gespeichert');bdForm=null;viewBoard();return}
     if(f.mode==='col'){if(!f.n.trim()){$('#bc_n').closest('.field').classList.add('missing');return}
       if(f.id)Object.assign(board.cols.find(c=>c.id===f.id),{n:f.n.trim(),done:f.done?1:0});else board.cols.push({id:'c'+Date.now(),n:f.n.trim(),done:f.done?1:0});
-      saveBoard();bdForm=null;viewBoard();toast('Spalte gespeichert');return}
+      saveBoard('Spalte gespeichert');bdForm=null;viewBoard();return}
     if(!f.t.trim()){$('#bk_t').closest('.field').classList.add('missing');toast('Bitte einen Titel eingeben');return}
     const {mode,_c,demo,...k}=f;k.t=k.t.trim();k.cl=k.cl.filter(x=>x.t.trim());
     if(k.id){const i=board.cards.findIndex(x=>x.id===k.id),oldCol=board.cards[i].col;board.cards[i]=k;if(oldCol!==k.col){board.cards.splice(i,1);let last=-1;board.cards.forEach((x,ix)=>{if(x.col===k.col)last=ix});board.cards.splice(last+1,0,k)}}
     else{k.id='k'+Date.now();let last=-1;board.cards.forEach((x,ix)=>{if(x.col===k.col)last=ix});board.cards.splice(last+1,0,k)}
-    saveBoard();bdForm=null;viewBoard();toast('Karte gespeichert')};
+    saveBoard('Karte gespeichert');bdForm=null;viewBoard()};
   const first=$('#bdF input');if(first)first.focus();
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&bdForm){bdForm=null;renderBdForm()}});

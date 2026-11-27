@@ -13,7 +13,7 @@ const { upsertUser }=require('../src/users');
 const db=require('../src/db');
 const docs=require('../src/sales/documents');
 
-test('Vertriebsrouten schützen echte Dokumente und schreiben nur mit CSRF', async () => {
+test('Angemeldete Konten teilen sich Vertrieb und Aufgabenboard', async () => {
   const password='NurLokalerHTTPTest42!';
   await upsertUser({email:'sales-pilot@example.invalid',firstName:'Sales',lastName:'Pilot',password});
   await upsertUser({email:'other@example.invalid',firstName:'Other',lastName:'Pilot',password});
@@ -34,8 +34,8 @@ test('Vertriebsrouten schützen echte Dokumente und schreiben nur mit CSRF', asy
     const url=origin+'/api/sales/employees';
     assert.equal((await fetch(url)).status,401);
     const other=await auth('other@example.invalid');
-    assert.equal(other.pilot,false);
-    assert.equal((await fetch(url,{headers:{cookie:other.cookie}})).status,403);
+    assert.equal(other.pilot,true);
+    assert.equal((await fetch(url,{headers:{cookie:other.cookie}})).status,200);
     const pilot=await auth('sales-pilot@example.invalid');
     assert.equal(pilot.pilot,true);
     const headers={cookie:pilot.cookie,'Content-Type':'application/json',origin};
@@ -49,7 +49,8 @@ test('Vertriebsrouten schützen echte Dokumente und schreiben nur mit CSRF', asy
     const upload=await post('/api/sales/employees/'+id+'/masters',{version:0,name:'Master.docx',content:word.toString('base64')});
     assert.equal(upload.status,201);
     const master=(await upload.json()).id;
-    assert.equal((await fetch(origin+'/api/sales/masters/'+master,{headers:{cookie:other.cookie}})).status,403);
+    const sharedMaster=await fetch(origin+'/api/sales/masters/'+master,{headers:{cookie:other.cookie}});
+    assert.deepEqual(Buffer.from(await sharedMaster.arrayBuffer()),word);
     const original=await fetch(origin+'/api/sales/masters/'+master,{headers:{cookie:pilot.cookie}});
     assert.match(original.headers.get('content-disposition'),/attachment/);
     assert.deepEqual(Buffer.from(await original.arrayBuffer()),word);
@@ -71,19 +72,30 @@ test('Vertriebsrouten schützen echte Dokumente und schreiben nur mit CSRF', asy
     assert.deepEqual(await update.json(),{...summary,version:2});
     assert.equal((await post(accessPath,{...accessInput,password:'',username:'different@example.invalid',version:2})).status,400);
     assert.equal((await post(accessPath,accessInput)).status,409);
-    process.env.SALES_PILOT_USERS='*';
-    const readonlyServer=createApp({sessionSecret:'test-only-long-session-secret'}).listen(0,'127.0.0.1');
-    await new Promise(resolve=>readonlyServer.once('listening',resolve));
-    try{
-      const readonlyOrigin='http://127.0.0.1:'+readonlyServer.address().port;
-      assert.equal((await fetch(readonlyOrigin+'/api/sales/employees',{headers:{cookie:other.cookie}})).status,200);
-      const publicSettings=await (await fetch(readonlyOrigin+'/api/sales/sources',{headers:{cookie:other.cookie}})).json();
-      assert.deepEqual(publicSettings.credentials.freelancermap,{configured:true,username:'',version:0});
-      const edit=await fetch(readonlyOrigin+'/api/sales/employees',{method:'POST',
-        headers:{cookie:other.cookie,'Content-Type':'application/json','X-CSRF-Token':other.csrf},
-        body:JSON.stringify(e)});
-      assert.equal(edit.status,403);
-    }finally{await new Promise(resolve=>readonlyServer.close(resolve));}
+    const publicSettings=await (await fetch(origin+'/api/sales/sources',{headers:{cookie:other.cookie}})).json();
+    assert.deepEqual(publicSettings.credentials.freelancermap,{configured:true,username:'',version:0});
+    const edit=await fetch(url,{method:'POST',headers:{cookie:other.cookie,'Content-Type':'application/json','X-CSRF-Token':other.csrf},
+      body:JSON.stringify(e)});
+    assert.equal(edit.status,403);
+    const boardUrl=origin+'/api/task-board';
+    const readBoard=async user=>(await fetch(boardUrl,{headers:{cookie:user.cookie}})).json();
+    const putBoard=(user,revision,board,csrf=user.csrf)=>fetch(boardUrl,{method:'PUT',
+      headers:{cookie:user.cookie,'Content-Type':'application/json','X-CSRF-Token':csrf,origin},
+      body:JSON.stringify({revision,board})});
+    const board={cols:[{id:'open',n:'Offen'}],people:[],cos:[],
+      cards:[{id:'ticket1',col:'open',t:'Gemeinsame Aufgabe',d:'',co:'',who:[],due:'',prio:'mittel',cl:[]}]};
+    assert.equal((await fetch(boardUrl)).status,401);
+    assert.deepEqual(await readBoard(pilot),{revision:0,board:null});
+    assert.equal((await putBoard(pilot,0,board,'')).status,403);
+    assert.deepEqual(await (await putBoard(pilot,0,board)).json(),{revision:1});
+    assert.deepEqual(await readBoard(other),{revision:1,board});
+    const updated=structuredClone(board);
+    updated.cards[0].t='Von anderem Konto geändert';
+    const conflict=await putBoard(other,0,updated);
+    assert.equal(conflict.status,409);
+    assert.deepEqual((await conflict.json()).board,board);
+    assert.deepEqual(await (await putBoard(other,1,updated)).json(),{revision:2});
+    assert.deepEqual(await readBoard(pilot),{revision:2,board:updated});
     const fibu=await fetch(origin+'/api/fibu/companies',{headers:{cookie:pilot.cookie}});
     assert.equal(fibu.status,200);
   }finally{

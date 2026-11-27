@@ -8,12 +8,11 @@ Im Backend die bestehenden lokalen Einstellungen für Session, Host und SQLite b
 
 ```powershell
 $env:PORT = '4090'
-$env:SALES_PILOT_USERS = 'astra-dev@example.invalid'
 $env:SALES_APPROVER_USERS = 'astra-dev@example.invalid'
 npm.cmd run dev
 ```
 
-Die Adresse lautet http://127.0.0.1:4090. Die Listen sind kommasepariert. In Produktion sehen standardmäßig alle angemeldeten Holding-Konten den Pilot. Die Bearbeitung und Freigabe sind standardmäßig auf den dokumentierten Holding-Login von Taner beschränkt. SALES_PILOT_USERS, SALES_EDITOR_USERS und SALES_APPROVER_USERS können dies in der privaten Serverumgebung überschreiben. Ein leerer Wert für SALES_PILOT_USERS deaktiviert den Pilot. Die Testadresse gehört ausschließlich in die lokale Umgebung.
+Die Adresse lautet http://127.0.0.1:4090. Die Listen sind kommasepariert. Alle angemeldeten Holding-Konten sehen den Vertrieb. Die Bearbeitung und Freigabe sind standardmäßig auf den dokumentierten Holding-Login von Taner beschränkt. SALES_EDITOR_USERS und SALES_APPROVER_USERS steuern Bearbeitung und Freigabe in der privaten Serverumgebung. Die Testadresse gehört ausschließlich in die lokale Umgebung.
 
 ## Ablauf
 
