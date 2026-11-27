@@ -622,6 +622,7 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 .bd-add{border:0;background:none;color:var(--muted);font:inherit;font-size:12.5px;text-align:left;padding:4px 12px 12px;cursor:pointer}
 .bd-add:hover{color:var(--ink)}
 .bd-quick{display:grid;gap:8px;padding:0 10px 12px}
+.bd-quick-company{min-width:0;max-width:100%;cursor:pointer}
 .bd-ph{height:4px;border-radius:2px;background:var(--brass)}
 .cl-row{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
 .cl-row input[type=checkbox]{accent-color:var(--brass);width:16px;height:16px}
@@ -2037,7 +2038,7 @@ function viewBoard(){
     return `<section class="bd-col" data-col="${c.id}" aria-label="Spalte ${esc(c.n)}">
       <div class="bd-col-h"><b>${esc(c.n)}${c.done?' <span class="pill good" style="font-size:10px;padding:0 6px">fertig</span>':''}</b><span style="display:flex;gap:4px;align-items:center"><span class="bd-count">${vis.length}${vis.length!==cards.length?' / '+cards.length:''}</span><button class="tl-edit" data-coled="${c.id}" aria-label="Spalte ${esc(c.n)} bearbeiten" title="Spalte bearbeiten">✎</button></span></div>
       <div class="bd-list" data-list="${c.id}">${vis.map(bdCardHTML).join('')}</div>
-      ${bdQuick===c.id?`<form class="bd-quick" data-qf="${c.id}"><div class="inp"><input id="bdQuickIn" placeholder="Titel der Karte, Enter zum Anlegen" aria-label="Neue Karte"></div><div class="actions"><button class="btn sm primary">Hinzufügen</button><button type="button" class="btn sm ghost" id="bdQuickX">Abbrechen</button></div></form>`
+      ${bdQuick===c.id?`<form class="bd-quick" data-qf="${c.id}"><div class="inp"><input id="bdQuickIn" placeholder="Titel der Karte, Enter zum Anlegen" aria-label="Neue Karte"></div><div class="actions"><button class="btn sm primary">Hinzufügen</button><button type="button" class="btn sm ghost" id="bdQuickX">Abbrechen</button><select name="company" class="btn sm bd-quick-company" aria-label="Firma für die neue Karte"><option value="">Keine Firma</option>${board.cos.map(co=>`<option value="${esc(co.id)}" ${co.id===(bdF.co!=="alle"?bdF.co:board.cos[0]?.id)?"selected":""}>${esc(coLbl(co))}</option>`).join("")}</select></div></form>`
         :`<button type="button" class="bd-add" data-qa="${c.id}">+ Karte hinzufügen</button>`}
     </section>`}).join('')}</div></div>
   <p class="muted" style="font-size:12px;margin:0">Karten per Drag &amp; Drop verschieben oder anklicken, um sie zu bearbeiten. Im Prototyp lokal im Browser gespeichert.</p>
@@ -2053,7 +2054,8 @@ function viewBoard(){
   $$('[data-qa]').forEach(b=>b.onclick=()=>{bdQuick=b.dataset.qa;viewBoard();$('#bdQuickIn').focus()});
   const qx=$('#bdQuickX');if(qx)qx.onclick=()=>{bdQuick=null;viewBoard()};
   $$('[data-qf]').forEach(f=>f.onsubmit=e=>{e.preventDefault();const t=$('#bdQuickIn').value.trim();if(!t){bdQuick=null;viewBoard();return}
-    board.cards.push({id:'k'+Date.now(),col:f.dataset.qf,t,d:'',co:bdF.co!=='alle'?bdF.co:(board.cos[0]?board.cos[0].id:''),who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]});saveBoard();viewBoard();$('#bdQuickIn').focus()});
+    const co=f.elements.company.value;
+    board.cards.push({id:'k'+Date.now(),col:f.dataset.qf,t,d:'',co,who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]});saveBoard();viewBoard();const input=$('#bdQuickIn');input.form.elements.company.value=co;input.focus()});
   $$('[data-card-delete]').forEach(button=>button.onclick=()=>{
     const k=board.cards.find(card=>card.id===button.dataset.cardDelete);
     if(k&&window.confirm('Karte „'+k.t+'“ löschen?')){
