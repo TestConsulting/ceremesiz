@@ -624,6 +624,10 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 .bd-attachment-drop{display:grid;gap:8px;padding:14px;border:2px dashed var(--line);border-radius:8px;background:var(--field)}
 .bd-attachment-drop.is-over{border-color:var(--good);background:var(--good-soft)}
 .bd-attachment-drop input{max-width:100%}
+.bd-description-heading{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bd-description-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
+.bd-description-editor textarea{display:block;min-height:12rem;resize:vertical;field-sizing:content}
+.bd-description [hidden]{display:none}
 .bd-attachment-list{margin:0;padding:0;list-style:none;display:grid;gap:5px}
 .bd-attachment-list li{display:flex;align-items:center;flex-wrap:wrap;gap:8px;overflow-wrap:anywhere}
 .bd-attachment-list:empty{display:none}
@@ -2322,7 +2326,17 @@ function renderBdForm(){
       <div class="actions full" style="justify-content:space-between;align-items:center">${delBtn('Spalte',n===0&&board.cols.length>1,n?'Erst alle Karten verschieben':'Letzte Spalte')}<span class="actions"><button type="button" class="btn ghost" id="bdCancel">Abbrechen</button><button class="btn primary" type="submit">Speichern</button></span></div>`}
   else{
     body=`<div class="field full is-req"><label for="bk_t">Titel<span class="req">*</span></label><div class="inp"><input id="bk_t" value="${esc(f.t)}"></div></div>
-      <div class="field full"><label for="bk_d">Beschreibung</label><div class="inp"><textarea id="bk_d" rows="3">${esc(f.d||'')}</textarea></div></div>
+      <section class="field full bd-description" aria-labelledby="bdDescriptionTitle">
+        <div class="bd-description-heading">
+          <h3 id="bdDescriptionTitle" style="margin:0">Beschreibung</h3>
+          ${f.id?'<button type="button" class="btn sm ghost" id="bdEditDescription" aria-controls="bdDescriptionEditor" aria-expanded="false">Bearbeiten</button>':''}
+        </div>
+        <div class="bd-description-text ${f.d?.trim()?'':'muted'}" id="bdDescriptionText" ${f.id?'':'hidden'}>${f.d?.trim()?esc(f.d):'Noch keine Beschreibung'}</div>
+        <div class="inp bd-description-editor" id="bdDescriptionEditor" ${f.id?'hidden':''}>
+          <textarea id="bk_d" rows="8" maxlength="20000" aria-labelledby="bdDescriptionTitle">
+${esc(f.d||'')}</textarea>
+        </div>
+      </section>
       <div class="field full" id="bdAttachments"><label>Anhänge</label>
         ${f.id?`<ul class="bd-attachment-list" data-attachment-list></ul>
         <div class="bd-attachment-drop" data-attachment-drop>
@@ -2379,6 +2393,18 @@ function renderBdForm(){
     else{k.id='k'+Date.now();let last=-1;board.cards.forEach((x,ix)=>{if(x.col===k.col)last=ix});board.cards.splice(last+1,0,k)}
     const saved=saveBoard('Karte gespeichert');bdForm=null;viewBoard();
     if(isNew&&await saved&&boardActive()&&!bdForm)openCard(k.id);
+  };
+  const editDescription=$('#bdEditDescription');
+  if(editDescription)editDescription.onclick=()=>{
+    const preview=$('#bdDescriptionText'),editor=$('#bdDescriptionEditor'),input=$('#bk_d');
+    const showEditor=editor.hidden;
+    editor.hidden=!showEditor;
+    preview.hidden=showEditor;
+    editDescription.setAttribute('aria-expanded',String(showEditor));
+    editDescription.textContent=showEditor?'Vorschau':'Bearbeiten';
+    if(showEditor){input.focus();return;}
+    preview.textContent=input.value.trim()?input.value:'Noch keine Beschreibung';
+    preview.classList.toggle('muted',!input.value.trim());
   };
   if(f.mode==='card')mountBdAttachments(f);
   const first=$('#bdF input');if(first)first.focus();
