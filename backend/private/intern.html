@@ -604,7 +604,10 @@ button.org-node:hover{box-shadow:0 0 0 2px var(--co)}
 .bd-card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--co);border-radius:8px;padding:10px 12px;display:grid;gap:7px;cursor:grab;text-align:left;font:inherit;color:inherit;width:100%}
 .bd-card:hover{border-color:var(--muted);border-left-color:var(--co)}
 .bd-card.dragging{opacity:.4}
-.bd-card b{font-size:13px;font-weight:600;line-height:1.35}
+.bd-card-row{position:relative}
+.bd-card b{font-size:13px;font-weight:600;line-height:1.35;padding-right:30px;overflow-wrap:anywhere}
+.bd-card-delete{position:absolute;top:4px;right:4px;width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:19px;cursor:pointer}
+.bd-card-delete:hover,.bd-card-delete:focus-visible{background:var(--surface-2);color:var(--bad)}
 .bd-card.done b{text-decoration:line-through;color:var(--muted)}
 .bd-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .bd-tag{font-size:10.5px;font-weight:700;color:var(--co);background:var(--field);border-radius:4px;padding:1px 6px}
@@ -2011,13 +2014,13 @@ function bdVisible(k){
 }
 function bdCardHTML(k){
   const done=bdDone(k),dc=bdDueCls(k),okN=k.cl.filter(x=>x.ok).length,p=BD_PRIO[k.prio]||BD_PRIO.mittel,co=bdCo(k.co);
-  return `<button type="button" class="bd-card ${done?'done':''}" draggable="true" data-card="${k.id}" style="--co:${co?co.c:'var(--line)'}" aria-label="${esc(k.t)} öffnen">
+  return `<div class="bd-card-row" data-card-row="${esc(k.id)}"><button type="button" class="bd-card ${done?'done':''}" draggable="true" data-card="${esc(k.id)}" style="--co:${co?co.c:'var(--line)'}" aria-label="${esc(k.t)} öffnen">
     <b>${esc(k.t)}</b>
     <div class="bd-meta">${co?`<span class="bd-tag ${co.img?'logo':''}" title="${esc(coLbl(co))}">${coFace(co,16)}</span>`:''}<span class="bd-prio" style="background:${p[1]}" title="Priorität ${p[0]}"></span>
       ${k.due?`<span class="bd-due ${dc}" title="Fällig">${dc==='late'?'überfällig · ':''}${deDate(k.due)}</span>`:''}
       ${k.cl.length?`<span class="bd-cl ${okN===k.cl.length?'full':''}">☑ ${okN}/${k.cl.length}</span>`:''}
       ${k.demo?'<span class="bd-cl">Beispiel</span>':''}
-      <span class="bd-av">${k.who.map(id=>{const pp=bdP(id);return pp?`<span style="background:${pp.c}" title="${esc(pp.n)}">${pp.img?`<img src="${pp.img}" alt="">`:esc(iniOf(pp.n))}</span>`:''}).join('')}</span></div></button>`;
+      <span class="bd-av">${k.who.map(id=>{const pp=bdP(id);return pp?`<span style="background:${pp.c}" title="${esc(pp.n)}">${pp.img?`<img src="${pp.img}" alt="">`:esc(iniOf(pp.n))}</span>`:''}).join('')}</span></div></button><button type="button" class="bd-card-delete" data-card-delete="${esc(k.id)}" aria-label="${esc(k.t)} löschen" title="Karte löschen">×</button></div>`;
 }
 function viewBoard(){
   const open=board.cards.filter(k=>!bdDone(k)).length,late=board.cards.filter(k=>bdDueCls(k)==='late').length;
@@ -2051,6 +2054,13 @@ function viewBoard(){
   const qx=$('#bdQuickX');if(qx)qx.onclick=()=>{bdQuick=null;viewBoard()};
   $$('[data-qf]').forEach(f=>f.onsubmit=e=>{e.preventDefault();const t=$('#bdQuickIn').value.trim();if(!t){bdQuick=null;viewBoard();return}
     board.cards.push({id:'k'+Date.now(),col:f.dataset.qf,t,d:'',co:bdF.co!=='alle'?bdF.co:(board.cos[0]?board.cos[0].id:''),who:bdF.who!=='alle'?[bdF.who]:(board.people[0]?[board.people[0].id]:[]),due:'',prio:'mittel',cl:[]});saveBoard();viewBoard();$('#bdQuickIn').focus()});
+  $$('[data-card-delete]').forEach(button=>button.onclick=()=>{
+    const k=board.cards.find(card=>card.id===button.dataset.cardDelete);
+    if(k&&window.confirm('Karte „'+k.t+'“ löschen?')){
+      bdDeleteCard(k.id);
+      $('#bdAddCard').focus();
+    }
+  });
   $$('[data-card]').forEach(el=>{
     el.onclick=()=>openCard(el.dataset.card);
     el.ondragstart=e=>{bdDrag=el.dataset.card;el.classList.add('dragging');try{e.dataTransfer.setData('text/plain',bdDrag);e.dataTransfer.effectAllowed='move'}catch(x){}};
@@ -2059,10 +2069,10 @@ function viewBoard(){
   $$('.bd-col').forEach(col=>{
     const list=col.querySelector('.bd-list');
     col.ondragover=e=>{if(!bdDrag)return;e.preventDefault();col.classList.add('over');
-      $$('.bd-ph').forEach(p=>p.remove());const after=[...list.querySelectorAll('.bd-card:not(.dragging)')].find(c=>{const r=c.getBoundingClientRect();return e.clientY<r.top+r.height/2});
+      $$('.bd-ph').forEach(p=>p.remove());const after=[...list.children].find(c=>{if(!c.dataset.cardRow||c.dataset.cardRow===bdDrag)return false;const r=c.getBoundingClientRect();return e.clientY<r.top+r.height/2});
       const ph=document.createElement('div');ph.className='bd-ph';after?list.insertBefore(ph,after):list.appendChild(ph)};
     col.ondragleave=e=>{if(!col.contains(e.relatedTarget)){col.classList.remove('over');col.querySelectorAll('.bd-ph').forEach(p=>p.remove())}};
-    col.ondrop=e=>{e.preventDefault();if(!bdDrag)return;const ph=list.querySelector('.bd-ph');const next=ph&&ph.nextElementSibling&&ph.nextElementSibling.dataset?ph.nextElementSibling.dataset.card:null;
+    col.ondrop=e=>{e.preventDefault();if(!bdDrag)return;const ph=list.querySelector('.bd-ph');const next=ph&&ph.nextElementSibling&&ph.nextElementSibling.dataset?ph.nextElementSibling.dataset.cardRow:null;
       bdMove(bdDrag,col.dataset.col,next);bdDrag=null;viewBoard()};
   });
 }
@@ -2072,6 +2082,10 @@ function bdMove(id,colId,beforeId){
   if(j<0){let last=-1;board.cards.forEach((x,ix)=>{if(x.col===colId)last=ix});j=last+1}
   board.cards.splice(j,0,k);saveBoard();
   if(was!==colId){const c=board.cols.find(x=>x.id===colId);toast('Verschoben nach „'+c.n+'“')}
+}
+function bdDeleteCard(id){
+  board.cards=board.cards.filter(k=>k.id!==id);
+  saveBoard();bdForm=null;viewBoard();toast('Karte gelöscht');
 }
 function openCard(id,col){
   const k=id?board.cards.find(x=>x.id===id):null;
@@ -2113,7 +2127,7 @@ function renderBdForm(){
   $('#bdX').onclick=close;$('#bdCancel').onclick=close;$('#bdOv').onclick=e=>{if(e.target.id==='bdOv')close()};
   const d=$('#bdDel');if(d)d.onclick=()=>{read();f._c=true;renderBdForm()};
   const dn=$('#bdDelNo');if(dn)dn.onclick=()=>{read();f._c=false;renderBdForm()};
-  const dk=$('#bdDelOk');if(dk)dk.onclick=()=>{if(f.mode==='col')board.cols=board.cols.filter(c=>c.id!==f.id);else board.cards=board.cards.filter(k=>k.id!==f.id);saveBoard();bdForm=null;viewBoard();toast(f.mode==='col'?'Spalte gelöscht':'Karte gelöscht')};
+  const dk=$('#bdDelOk');if(dk)dk.onclick=()=>{if(f.mode!=='col')return bdDeleteCard(f.id);board.cols=board.cols.filter(c=>c.id!==f.id);saveBoard();bdForm=null;viewBoard();toast('Spalte gelöscht')};
   $$('[data-simg]').forEach(inp=>inp.onchange=()=>{const file=inp.files[0];if(!file)return;read();readImg(file,inp.dataset.simg==='people'?160:320,u=>{f[inp.dataset.simg][+inp.dataset.i].img=u;renderBdForm()})});
   $$('[data-simgrm]').forEach(b=>b.onclick=()=>{read();delete f[b.dataset.simgrm][+b.dataset.i].img;renderBdForm()});
   $$('[data-sw]').forEach(b=>b.onclick=()=>{read();f[b.dataset.sw][+b.dataset.i].c=b.dataset.c;renderBdForm()});
